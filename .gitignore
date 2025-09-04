@@ -1,0 +1,5 @@
+.env
+tree-and-cat.sh
+llm.txt
+TODO.md
+noir/target/*
