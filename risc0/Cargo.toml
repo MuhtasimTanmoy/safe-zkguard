@@ -7,7 +7,8 @@ edition = "2021"
 rs_merkle   = { version = "1.5.0", default-features = false }
 clap = { version = "4.0", features = ["derive"] }
 zkguard-methods = { path = "methods" }
-risc0-zkvm = { version = "2.3", default-features = false, features = ["std", "unstable", "client"] }
+risc0-zkvm = { version = "3.0.3", default-features = false, features = ["std", "unstable", "client", "bonsai"] }
+bonsai-sdk = { version = "1.4.1" }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 anyhow = "1.0"
 dotenv = "0.15"
@@ -16,6 +17,9 @@ zkguard_core = { path = "./core" }
 bincode = "1.3.3"
 hex = "0.4"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+bytemuck = "1.14"
+alloy-sol-types = { version = "1.0.0" }
+alloy-primitives = { version = "1.0.0" }
 
 [features]
 cuda = ["risc0-zkvm/cuda"]

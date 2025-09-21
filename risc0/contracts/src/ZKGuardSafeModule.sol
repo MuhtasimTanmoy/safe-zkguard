@@ -31,6 +31,11 @@ interface ISafe {
     function enableModule(address module) external;
 }
 
+/// @notice Interface for the ImageID contract.
+interface IImageID {
+    function ZKGUARD_POLICY_ID() external view returns (bytes32);
+}
+
 /// @title ZKGuardSafeModule
 /// @notice A Safe Module that verifies a RISC0 proof attesting that an action
 ///         complies with the ZKGuard policy engine, then executes that action via the Safe.
@@ -44,9 +49,10 @@ interface ISafe {
 ///      userAction layout (same as your wrapper):
 ///      abi.encode(address to, uint256 value, bytes data, address signer, bytes signature)
 contract ZKGuardSafeModule {
-    /// Immutable verifier + image.
+    /// Immutable verifier + imageId (pinned at construction time).
+    /// @notice Image ID of the only zkVM binary to accept verification from.
+    bytes32 public imageId;
     IRiscZeroVerifier public immutable verifier;
-    bytes32 public immutable imageId;
 
     /// Policy root commitments pinned in the module.
     bytes32 public immutable policy_hash;
@@ -67,14 +73,14 @@ contract ZKGuardSafeModule {
 
     constructor(
         address _verifier,
-        bytes32 _imageId,
+        address _imageId,
         bytes32 _policy_hash,
         bytes32 _groups_hash,
         bytes32 _allow_hash
     ) {
         require(_verifier != address(0), "bad-verifier");
         verifier = IRiscZeroVerifier(_verifier);
-        imageId = _imageId;
+        imageId = IImageID(_imageId).ZKGUARD_POLICY_ID();
 
         policy_hash = _policy_hash;
         groups_hash = _groups_hash;
@@ -106,7 +112,6 @@ contract ZKGuardSafeModule {
         // (1) Verify RISC Zero proof; inherits all invariants enforced by the canonical verifier.
         bytes32 jdig = sha256(journal);
         verifier.verify(seal, imageId, jdig);
-
         // (2) Decode journal claims + enforce against module state.
         (
             bytes32 claimed_action_hash,
@@ -129,13 +134,10 @@ contract ZKGuardSafeModule {
         usedReceipt[receiptKey] = true;
 
         // (5) Decode the actionable call (same tuple as your wrapper; signature is currently informational).
-        (
-            address to,
-            uint256 value,
-            bytes memory data /*address signer*/ /*bytes memory signature*/,
-            ,
-
-        ) = abi.decode(userAction, (address, uint256, bytes, address, bytes));
+        (address to, uint256 value, bytes memory data) = abi.decode(
+            userAction,
+            (address, uint256, bytes)
+        );
 
         // (6) Execute via the Safe module path (must be enabled on `safe`).
         //     If this module is not enabled on `safe`, the call reverts inside the Safe.

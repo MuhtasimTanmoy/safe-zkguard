@@ -3,6 +3,7 @@ pragma solidity ^0.8.21;
 
 import "forge-std/Script.sol";
 import {ZKGuardSafeModule} from "../src/ZKGuardSafeModule.sol";
+import "./NickAddress.sol";
 
 // --- Minimal Safe interfaces (same as used broadly in Safe scripts) ---
 interface ISafeProxyFactory {
@@ -31,7 +32,6 @@ interface ISafe {
 }
 
 // --- Helper used via DELEGATECALL inside Safe.setup to self-call enableModule ---
-// (Same pattern as production 4337 setups: the Safe must self-call ModuleManager.enableModule)
 interface ISafeEnableModule {
     function enableModule(address module) external;
 }
@@ -72,7 +72,8 @@ contract DeploySafe is Script {
     function run() external {
         // -------- ENV (align with your CI/secrets) --------
         address verifier = vm.envAddress("RISC0_VERIFIER"); // IRiscZeroVerifier
-        bytes32 imageId = vm.envBytes32("ZK_IMAGE_ID"); // per-Safe guest image id
+        address imageId = vm.envAddress("RISC0_IMAGE_ID"); // per-Safe guest image id
+
         bytes32 policyHash = vm.envBytes32("POLICY_HASH"); // policy root
         bytes32 groupsHash = vm.envBytes32("GROUPS_HASH"); // groups root
         bytes32 allowHash = vm.envBytes32("ALLOW_HASH"); // allowlists root
@@ -82,14 +83,38 @@ contract DeploySafe is Script {
         address fallbackHandler = vm.envAddress("SAFE_FALLBACK_HANDLER"); // optional
         uint256 saltNonce = vm.envUint("SAFE_SALT_NONCE");
 
-        uint256 ownersLen = vm.envUint("OWNERS_LEN");
+        uint256 ownersLen = 1;
         address[] memory owners = new address[](ownersLen);
-        for (uint256 i = 0; i < ownersLen; i++) {
-            owners[i] = vm.envAddress(
-                string(abi.encodePacked("OWNER_", vm.toString(i)))
-            );
-        }
-        uint256 threshold = vm.envUint("THRESHOLD");
+        address nickOwner = NickAddress.createRandomAddress(
+            keccak256(
+                abi.encodePacked(
+                    block.timestamp,
+                    msg.sender,
+                    vm.envBytes32("NICK_SEED")
+                )
+            )
+        );
+        owners[0] = nickOwner;
+
+        // Log all loaded env variables
+        console2.log("RISC0_VERIFIER");
+        console2.logAddress(verifier);
+        console2.log("RISC0_IMAGE_ID");
+        console2.logAddress(imageId);
+        console2.log("POLICY_HASH");
+        console2.logBytes32(policyHash);
+        console2.log("GROUPS_HASH");
+        console2.logBytes32(groupsHash);
+        console2.log("ALLOW_HASH");
+        console2.logBytes32(allowHash);
+        console2.log("SAFE_SINGLETON");
+        console2.logAddress(singleton);
+        console2.log("SAFE_PROXY_FACTORY");
+        console2.logAddress(proxyFactory);
+        console2.log("SAFE_FALLBACK_HANDLER");
+        console2.logAddress(fallbackHandler);
+        console2.log("SAFE_SALT_NONCE");
+        console2.logUint(saltNonce);
 
         vm.startBroadcast();
 
@@ -117,7 +142,7 @@ contract DeploySafe is Script {
         bytes memory initializer = abi.encodeWithSignature(
             "setup(address[],uint256,address,bytes,address,address,uint256,address)",
             owners,
-            threshold,
+            1,
             address(setupHelper), // to (delegatecall target)
             enableData, // data (enable our module)
             fallbackHandler,
