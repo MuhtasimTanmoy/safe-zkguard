@@ -1,4 +1,3 @@
-
 use anyhow::Result;
 use bincode::Options;
 use clap::Parser;
@@ -18,7 +17,10 @@ use zkguard_methods::{ZKGUARD_POLICY_ELF, ZKGUARD_POLICY_ID};
 use bytemuck::cast_slice;
 use risc0_zkvm::sha::Digestible;
 use anyhow::bail;
-use alloy_sol_types::{sol, SolValue};   
+use alloy_sol_types::{sol, SolValue};
+use tracing_subscriber::EnvFilter;
+
+mod onchain_verifier;
 
 // Solidity ABI encoding for public input
 sol! {
@@ -35,6 +37,8 @@ sol! {
 struct Args {
     #[clap(long)]
     example: String,
+    #[clap(long)]
+    verify_onchain: bool,
 }
 
 // Helper to bincode-encode with fixint
@@ -102,13 +106,14 @@ pub fn encode_seal(receipt: &risc0_zkvm::Receipt) -> Result<Vec<u8>, anyhow::Err
 
 const TRANSFER_SELECTOR: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
 
-fn run_prover(
+async fn run_prover(
     policy: &Vec<PolicyLine>,
     policy_line: &PolicyLine,
     user_action: &UserAction,
     groups: &HashMap<String, Vec<[u8; 20]>>,
     allowlists: &HashMap<String, Vec<[u8; 20]>>,
-) -> Result<()> {   
+    verify_onchain_flag: bool,
+) -> Result<()> {
     println!("BONSAI_API_KEY present: {}", std::env::var("BONSAI_API_KEY").is_ok());
     println!("BONSAI_API_URL present: {}", std::env::var("BONSAI_API_URL").is_ok());
     println!("RISC0_DEV_MODE: {:?}", std::env::var("RISC0_DEV_MODE"));
@@ -216,12 +221,36 @@ fn run_prover(
     receipt.verify(ZKGUARD_POLICY_ID)?;
     println!("[{}] Verified!", policy_line.id);
 
+    if verify_onchain_flag {
+        println!("[{}] Verifying on-chain...", policy_line.id);
+        let private_key = std::env::var("WALLET_PRIV_KEY").expect("WALLET_PRIV_KEY must be set");
+        let eth_rpc_url = std::env::var("ETH_RPC_URL").expect("ETH_RPC_URL must be set");
+        let contract_address = std::env::var("MODULE_ADDRESS").expect("MODULE_ADDRESS must be set");
+
+        onchain_verifier::verify_onchain(
+            &private_key,
+            &eth_rpc_url,
+            &contract_address,
+            onchain_seal,
+            journal_bytes,
+            user_action.to.to_vec(),
+            user_action.value,
+            user_action.data.clone(),
+        ).await?;
+        println!("[{}] Verified on-chain!", policy_line.id);
+    }
+
+
     Ok(())
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     dotenv().ok();
     let args = Args::parse();
+
+    let filter = EnvFilter::new("debug");
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     // Define the first signer's private key
     let sk1_hex = "2222222222222222222222222222222222222222222222222222222222222221";
@@ -346,7 +375,7 @@ fn main() -> Result<()> {
             let mut sig_bytes = signature.to_bytes().to_vec();
             sig_bytes.push(recovery_id.to_byte() + 27);
             user_action.signatures = vec![sig_bytes];
-            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists)?;
+            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists, args.verify_onchain).await?;
         }
         "defi_swaps" => {
             let policy_line = policy[1].clone();
@@ -356,7 +385,7 @@ fn main() -> Result<()> {
             let mut sig_bytes = signature.to_bytes().to_vec();
             sig_bytes.push(recovery_id.to_byte() + 27);
             user_action.signatures = vec![sig_bytes];
-            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists)?;
+            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists, args.verify_onchain).await?;
         }
         "supply_lending" => {
             let policy_line = policy[2].clone();
@@ -372,7 +401,7 @@ fn main() -> Result<()> {
             let mut sig_bytes = signature.to_bytes().to_vec();
             sig_bytes.push(recovery_id.to_byte() + 27);
             user_action.signatures = vec![sig_bytes];
-            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists)?;
+            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists, args.verify_onchain).await?;
         }
         "interact_dapps" => {
             let policy_line = policy[3].clone();
@@ -382,7 +411,7 @@ fn main() -> Result<()> {
             let mut sig_bytes = signature.to_bytes().to_vec();
             sig_bytes.push(recovery_id.to_byte() + 27);
             user_action.signatures = vec![sig_bytes];
-            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists)?;
+            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists, args.verify_onchain).await?;
         }
         "amount_limits" => {
             let policy_line = policy[4].clone();
@@ -398,7 +427,7 @@ fn main() -> Result<()> {
             let mut sig_bytes = signature.to_bytes().to_vec();
             sig_bytes.push(recovery_id.to_byte() + 27);
             user_action.signatures = vec![sig_bytes];
-            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists)?;
+            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists, args.verify_onchain).await?;
         }
         "function_level_controls" => {
             let policy_line = policy[5].clone();
@@ -408,7 +437,7 @@ fn main() -> Result<()> {
             let mut sig_bytes = signature.to_bytes().to_vec();
             sig_bytes.push(recovery_id.to_byte() + 27);
             user_action.signatures = vec![sig_bytes];
-            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists)?;
+            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists, args.verify_onchain).await?;
         }
         "advanced_signer_policies" => {
             let policy_line = policy[6].clone();
@@ -425,7 +454,7 @@ fn main() -> Result<()> {
             sig_bytes2.push(recovery_id2.to_byte() + 27);
 
             user_action.signatures = vec![sig_bytes1, sig_bytes2];
-            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists)?;
+            run_prover(&policy, &policy_line, &user_action, &groups, &allowlists, args.verify_onchain).await?;
         }
         _ => {
             println!("Unknown example: {}", args.example);
