@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-use anyhow::{Context, Result};
 use alloy::{
     network::{EthereumWallet, TransactionBuilder},
     primitives::{Address, Bytes, U256},
@@ -10,6 +9,7 @@ use alloy::{
     sol,
 };
 use alloy_sol_types::{SolCall, SolValue};
+use anyhow::{Context, Result};
 use url::Url;
 
 sol! {
@@ -38,6 +38,7 @@ pub async fn verify_onchain(
     to: Vec<u8>,
     value: u128,
     data: Vec<u8>,
+    nonce: u64,
 ) -> Result<(), anyhow::Error> {
     let private_key_signer = private_key.parse::<PrivateKeySigner>()?;
     let wallet = EthereumWallet::from(private_key_signer.clone());
@@ -49,12 +50,9 @@ pub async fn verify_onchain(
 
     let to_addr = Address::from_slice(&to);
     let val_u256 = U256::from(value);
+    let nonce_u256 = U256::from(nonce);
 
-    let user_action = (
-        to_addr,
-        val_u256,
-        Bytes::from(data),
-    ).abi_encode_params();
+    let user_action = (to_addr, val_u256, nonce_u256, Bytes::from(data)).abi_encode_params();
 
     let calldata = IZKGuardSafeModule::verifyAndExecCall {
         safe: safe_address,
@@ -69,15 +67,19 @@ pub async fn verify_onchain(
 
     // Log the calldata before encodig it
     println!("Safe address: {}", safe_address);
-    println!("User action (len={}): {:x?}", calldata.abi_encoded_size(), hex::encode(calldata.abi_encode()));
+    println!(
+        "User action (len={}): {:x?}",
+        calldata.abi_encoded_size(),
+        hex::encode(calldata.abi_encode())
+    );
 
     let tx = TransactionRequest::default()
         .with_to(address_contract)
         .with_input(calldata.abi_encode());
 
-    //let estimate = provider.estimate_gas(tx.clone()).await?;
-    //println!("Gas estimate: {}", estimate);
-    let tx = tx.with_gas_limit(1000000/*estimate * 2*/);
+    let estimate = provider.estimate_gas(tx.clone()).await?;
+    println!("Gas estimate: {}", estimate);
+    let tx = tx.with_gas_limit((estimate as f64 * 1.125) as u64); // add 12.5% buffer
 
     let transaction_result = provider
         .send_transaction(tx)

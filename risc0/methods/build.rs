@@ -18,8 +18,8 @@ use risc0_build::{embed_methods_with_options, DockerOptionsBuilder, GuestOptions
 use risc0_build_ethereum::generate_solidity_files;
 
 // Paths where the generated Solidity files will be written.
-const SOLIDITY_IMAGE_ID_PATH: &str = "../contracts/src/ImageID.sol";
-const SOLIDITY_ELF_PATH: &str = "../contracts/test/Elf.sol";
+const SOLIDITY_IMAGE_ID_PATH: &str = "../../contracts/src/ImageID.sol";
+const SOLIDITY_ELF_PATH: &str = "../../contracts/test/Elf.sol";
 
 fn main() {
     // Builds can be made deterministic, and thereby reproducible, by using Docker to build the
@@ -46,6 +46,6 @@ fn main() {
         .with_elf_sol_path(SOLIDITY_ELF_PATH);
 
     if let Err(e) = generate_solidity_files(guests.as_slice(), &solidity_opts) {
-        println!("cargo:warning=Failed to generate Solidity files: {e}");
+        println!("cargo:error=Failed to generate Solidity files: {e}");
     };
 }

@@ -6905,6 +6905,7 @@ dependencies = [
  "risc0-zkvm",
  "rs_merkle",
  "serde",
+ "serde_json",
  "tiny-keccak",
  "tokio",
  "tracing",

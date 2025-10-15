@@ -1,53 +1,103 @@
-# ZKGuard: A Zero-Knowledge Policy Engine for On-Chain Actions
+# Safe-ZKGuard: ZKGuard implementation using Safe{Wallet}
 
-ZKGuard is a high-assurance security system designed to enforce customizable policies on blockchain transactions before they are executed. It uses the power of zero-knowledge proofs (ZKPs) to validate that a user's action complies with a predefined security policy, without revealing the policy itself.
+This directory contains a `Safe{Wallet}`-based implementation of the ZKGuard policy engine. For more information on ZKGuard, please visit the [ZKGuard](https://github.com/ziemen4/zkguard) repository.
 
-This provides a powerful combination of security, privacy, and efficiency, making it ideal for securing DAO treasuries, smart contract wallets, and other critical on-chain infrastructure.
+## Risc0 Implementation
 
-## Core Concept: The Allow-List Model
+We implement ZKGuard using [Risc0](https://risczero.com/), which yields high expressivity but more proving complexity and latency.
+It leverages a Zero-Knowledge Virtual Machine (zkVM) to prove policy compliance by executing a standard Rust program in a verifiable manner. This approach provides significant flexibility, allowing for complex, expressive policies to be written in a general-purpose language without the need to design low-level arithmetic circuits.
 
-The system operates on a strict **allow-list model**. A policy is a set of rules, where each rule explicitly defines a permitted action (e.g., "Allow transfers of up to 10,000 USDC to addresses in the 'Team Wallets' group"). Any action that does not match at least one "allow" rule is implicitly blocked. This "default-deny" posture provides a robust security foundation.
+**Host Program** (`examples/prover.rs`): This is an untrusted program that runs on a standard machine. Its primary role is to prepare all the necessary inputs for the proof. This includes loading the user's action from command-line arguments, finding the specific policy rule that allows it, and fetching any required context like address groups and allow-lists. It then invokes the guest program within the zkVM.
 
-To avoid placing the entire, potentially large, policy set on-chain, we commit to it using a **Merkle tree**. The root of this tree is the only piece of information that needs to be made public, serving as a succinct cryptographic fingerprint of the entire policy.
+**Guest Program** (`methods/guest/src/bin/zkguard_policy.rs`): This is the trusted program whose execution is proven. It runs inside the Risc0 zkVM. The guest receives the inputs from the host and performs the complete two-part verification:
 
-## The Two-Part Proof Architecture
+1.  **Proof of Membership**: It verifies that the provided `PolicyLine` and `MerklePath` correctly compute to the trusted `Merkle Root`. This cryptographically proves that the rule is an authentic part of the established policy set.
+   
+2.  **Proof of Compliance**: It evaluates the `UserAction` against the now-authenticated `PolicyLine`. This involves checking the transaction type, destination, asset, amount, function selectors, and verifying the nonce.
 
-The fundamental innovation of ZKGuard is how it proves that an action is valid. The generated zero-knowledge proof is not a monolithic check; it's a cryptographic testament to two distinct but connected claims:
+If both steps succeed, the zkVM generates a ZKP (`Receipt`) which contains a `Journal`. The guest commits the public hashes of the inputs (`CallHash`, `PolicyMerkleRoot`, `GroupsHash`, `AllowHash`) to this journal, making them available for public verification.
 
-1.  **Proof of Membership**: This part of the proof confirms that the rule being used for validation is authentic and unaltered. The prover supplies the ZK circuit/VM with a single policy rule and a Merkle proof (a list of sibling hashes). The ZKP logic then re-calculates the Merkle root from this data and asserts that it matches the publicly known, trusted `PolicyMerkleRoot`. This proves the rule is a legitimate part of the committed policy set without revealing any other rules.
+## Policy Structure
 
-2.  **Proof of Compliance**: Once the rule's authenticity is established via the Proof of Membership, this part of the proof confirms that the user's action strictly adheres to the conditions of that rule. The ZKP logic evaluates every field of the user's action (`to`, `value`, `data`, `signer(s)`) against the constraints defined in the policy rule (`DestinationPattern`, `AssetPattern`, `SignerPattern`, etc.). This includes verifying the cryptographic signature(s) to ensure the action was authorized by the correct party.
+Policies are defined using Rust structs and enums located in the `zkguard_core` crate and configured via JSON files in `examples/`.
 
-By combining these two proofs into a single ZKP, ZKGuard provides a powerful guarantee: "I can prove this action is authorized by a valid rule within the committed policy, and I can do so without revealing which rule or any other part of the policy."
+*   `PolicyLine`: The core struct defining a single rule.
+*   `TxType`: `Transfer` or `ContractCall`.
+*   `DestinationPattern`:
+    *   `Any`
+    *   `Group(String)`: Destination must be in a named group (e.g., "TeamWallets").
+    *   `Allowlist(String)`: Destination must be in a named list (e.g., "ApprovedDEXs").
+*   `SignerPattern`:
+    *   `Any`: Any valid signature.
+    *   `Exact([u8; 20])`: A specific signer address.
+    *   `Group(String)`: The signer must belong to a named group.
+    *   `Threshold { group: String, threshold: u8 }`: A minimum number of signers from a named group must have signed.
+*   `AssetPattern`: `Any` or `Exact([u8; 20])` (a specific token address).
 
-### Benefits
-* **Privacy**: The entire policy set remains confidential. Only the Merkle root is public.
-* **Efficiency**: The complexity of the proof is constant regardless of the number of rules in the policy. This is a huge advantage over systems that might need to loop through many rules on-chain.
-* **Security**: Policies are enforced by immutable cryptography, removing reliance on centralized intermediaries or fallible multi-sig signers.
-* **Flexibility**: Policies can be updated off-chain by simply publishing a new Merkle root.
+## End-to-End Guide: Deployment and Execution
 
-## Implementations
+This guide will walk you through deploying the smart contracts and using the prover to generate a proof and execute a transaction on-chain.
 
-This repository contains two parallel implementations of the ZKGuard engine, demonstrating different ZK technologies:
+### Prerequisites
 
-### 🔵 `gnark` (Go) - zk-SNARKs
-This implementation uses the `gnark` library to build a **Groth16 zk-SNARK circuit**. It is highly optimized for performance and generates extremely small proofs, making it ideal for on-chain verification where gas costs are a primary concern.
+*   Rust, configured with the toolchain specified in `rust-toolchain.toml`. If you have `rustup` installed, it will automatically use the correct version when you are in this directory.
+*   Foundry for Solidity development and deployment.
 
-➡️ **[See the `gnark` README for technical details and instructions.](./gnark/README.md)**
+### Step 1: Compile Circuits and Build Prover
 
-### 🔴 `risc0` (Rust) - zkVM
-This implementation uses the **Risc0 zkVM**, a general-purpose zero-knowledge virtual machine. Instead of designing a circuit, we write standard Rust code that executes inside the zkVM to perform the validation. This approach offers greater flexibility for writing highly complex and expressive policies.
+From this `risc0` directory, build the Rust code. This compiles the guest program (the "circuit") and should create a new `ImageID.sol` contract under the `contracts/src` directory.
 
-➡️ **[See the `risc0` README for technical details and instructions.](./risc0/README.md)**
+```bash
+cargo build --release
+```
 
-## Contributing
+### Step 2: Deploy the `ImageID.sol` Contract
 
-We welcome contributions from the community! Whether it's reporting a bug, proposing a new feature, or submitting a pull request, your input is valuable.
+The `ImageID` contract stores the unique identifier for your zkVM guest program. If the guest code changes, the Image ID will change, and a new deployment will be required.
 
-Please see our **[CONTRIBUTING.md](./CONTRIBUTING.md)** file for detailed guidelines on how to get started with contributing to the project.
+```bash
+forge create contracts/src/ImageID.sol:ImageID --rpc-url <YOUR_RPC_URL> --private-key <YOUR_PRIVATE_KEY> --broadcast
+```
 
-## License
+Take note of the deployed `ImageID` contract address.
 
-This project is licensed under the Apache 2.0 License.
+### Step 3: Set `.env` Variables for Deployment
 
-See the **[LICENSE.md](./LICENSE.md)** file for the full license text.
+Create or update a `.env` file in the `contracts` directory. You can refer to the `.env.template` file for a full list of required variables. Ensure you set `RISC0_IMAGE_ID` to the address of the `ImageID` contract you just deployed.
+
+### Step 4: Deploy the ZKGuardSafeModule and Safe Wallet
+
+This script deploys the `ZKGuardSafeModule` and a new Gnosis Safe, then enables the module on the Safe.
+
+```bash
+forge script script/DeployModuleAndSafe.s.sol:DeploySafe --rpc-url <YOUR_RPC_URL> --private-key <YOUR_PRIVATE_KEY> --via-ir --broadcast -vvvvv
+```
+
+Take note of the deployed `ZKGuardSafeModule` address and the new `Safe` address from the script output.
+
+### Step 5: Set `.env` Variables for Prover Interaction
+
+Create or update a `.env` file in this `risc0` directory (this is separate from the one in `contracts`). Refer to `.env.example` for the required variables. You must include the `MODULE_ADDRESS` and `SAFE_ADDRESS` that were deployed in the previous step.
+
+### Step 6: Create a Proof and Execute On-Chain
+
+Run the `prover` example to generate a proof and send the transaction for verification and execution. The command requires you to specify the policy files, the rule ID, and the full details of the user action.
+
+```bash
+cargo run --release --example prover -- \
+    --policy-file risc0/examples-v2/policy.json \
+    --groups-file risc0/examples-v2/groups.json \
+    --allowlists-file risc0/examples-v2/allowlists.json \
+    --rule-id <RULE_ID> \
+    --to <TO_ADDRESS> \
+    --value <VALUE_IN_WEI> \
+    --data <HEX_CALLDATA> \
+    --private-key <SIGNER_PRIVATE_KEY> \
+    --nonce <SAFE_NONCE> \
+    --verify-onchain
+```
+
+This command will:
+1.  Generate a RISC Zero proof that the user action is valid according to the specified policy rule.
+2.  Call the `verifyAndExec` function on the deployed `ZKGuardSafeModule` contract.
+3.  The module will verify the proof and, if valid, execute the transaction through the Safe.

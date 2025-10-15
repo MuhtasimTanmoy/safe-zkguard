@@ -90,6 +90,7 @@ fn main() -> Result<()> {
         to: usdt_addr,
         value: 0,
         data,
+        nonce: 0,
         signatures: vec![], // Will be filled in next
     };
 
