@@ -1,6 +1,6 @@
 # Safe-ZKGuard: ZKGuard implementation using Safe{Wallet}
 
-This directory contains a `Safe{Wallet}`-based implementation of the ZKGuard policy engine. For more information on ZKGuard, please visit the [ZKGuard](https://github.com/ziemen4/zkguard) repository.
+This directory contains a `Safe{Wallet}`-based implementation of the ZKGuard policy engine via a [Safe Module](https://docs.safe.global/advanced/smart-account-modules). For more information on ZKGuard, please visit the [ZKGuard](https://github.com/ziemen4/zkguard) repository.
 
 ## Risc0 Implementation
 
@@ -45,7 +45,7 @@ This guide will walk you through deploying the smart contracts and using the pro
 
 ### Step 1: Compile Circuits and Build Prover
 
-From this `risc0` directory, build the Rust code. This compiles the guest program (the "circuit") and should create a new `ImageID.sol` contract under the `contracts/src` directory.
+From this `risc0` directory, build the Rust code. This compiles the guest program (the "circuit") and should create a new `ImageID.sol` contract under the `contracts/src` directory.****
 
 ```bash
 cargo build --release
