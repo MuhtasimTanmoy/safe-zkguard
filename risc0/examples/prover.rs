@@ -4,7 +4,7 @@ use anyhow::Result;
 use bincode::Options;
 use clap::Parser;
 use dotenv::dotenv;
-use k256::ecdsa::SigningKey;
+use k256::ecdsa::{SigningKey};
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{default_prover, ExecutorEnv, InnerReceipt, Prover};
 use rs_merkle::MerkleTree;
@@ -45,8 +45,8 @@ struct Args {
     value: u128,
     #[clap(long)]
     data: String,
-    #[clap(long)]
-    private_key: String,
+    #[clap(long, num_args = 1..)]
+    private_keys: Vec<String>,
     #[clap(long)]
     nonce: u64,
     #[clap(long)]
@@ -400,17 +400,20 @@ async fn main() -> Result<()> {
         signatures: vec![],
     };
 
-    let sk = SigningKey::from_slice(&hex::decode(
-        args.private_key
-            .strip_prefix("0x")
-            .unwrap_or(&args.private_key),
-    )?)
-    .unwrap();
     let message_hash = hash_user_action(&user_action);
-    let (signature, recovery_id) = sk.sign_prehash_recoverable(&message_hash)?;
-    let mut sig_bytes = signature.to_bytes().to_vec();
-    sig_bytes.push(recovery_id.to_byte() + 27);
-    user_action.signatures = vec![sig_bytes];
+
+    let mut signatures: Vec<Vec<u8>> = Vec::new();
+    for pk_hex in &args.private_keys {
+        let sk = SigningKey::from_slice(&hex::decode(
+            pk_hex.strip_prefix("0x").unwrap_or(pk_hex),
+        )?)?;
+        let (signature, recovery_id) = sk.sign_prehash_recoverable(&message_hash)?;
+        let mut sig_bytes = signature.to_bytes().to_vec();
+        sig_bytes.push(recovery_id.to_byte() + 27);
+        signatures.push(sig_bytes);
+    }
+
+    user_action.signatures = signatures;
 
     run_prover(
         &policy,

@@ -46,7 +46,6 @@ fn hash_user_action_keccak256(user_action: &UserAction) -> [u8; 32] {
     let data = Bytes::from(user_action.data.clone());
 
     let encoded = (to, value, nonce, data).abi_encode_params();
-    println!("Encoded user action (len={}): {:x?}", encoded.len(), hex::encode(&encoded));
     keccak256(&encoded)
 }
 
