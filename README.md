@@ -7,7 +7,7 @@ This directory contains a `Safe{Wallet}`-based implementation of the ZKGuard pol
 We implement ZKGuard using [Risc0](https://risczero.com/), which yields high expressivity but more proving complexity and latency.
 It leverages a Zero-Knowledge Virtual Machine (zkVM) to prove policy compliance by executing a standard Rust program in a verifiable manner. This approach provides significant flexibility, allowing for complex, expressive policies to be written in a general-purpose language without the need to design low-level arithmetic circuits.
 
-**Host Program** (`examples/prover.rs`): This is an untrusted program that runs on a standard machine. Its primary role is to prepare all the necessary inputs for the proof. This includes loading the user's action from command-line arguments, finding the specific policy rule that allows it, and fetching any required context like address groups and allow-lists. It then invokes the guest program within the zkVM.
+**Host Program** (`examples/prover.rs` or `src/main.rs`): This is an untrusted program that runs on a standard machine. Its primary role is to prepare all the necessary inputs for the proof. The `examples/prover.rs` also includes loading the user's action from command-line arguments, finding the specific policy rule that allows it, and fetching any required context like address groups and allow-lists. It then invokes the guest program within the zkVM.
 
 **Guest Program** (`methods/guest/src/bin/zkguard_policy.rs`): This is the trusted program whose execution is proven. It runs inside the Risc0 zkVM. The guest receives the inputs from the host and performs the complete two-part verification:
 
@@ -33,6 +33,16 @@ Policies are defined using Rust structs and enums located in the `zkguard_core` 
     *   `Group(String)`: The signer must belong to a named group.
     *   `Threshold { group: String, threshold: u8 }`: A minimum number of signers from a named group must have signed.
 *   `AssetPattern`: `Any` or `Exact([u8; 20])` (a specific token address).
+
+## Running the Main Prover
+
+We outline a simple application for generating a proof in `src/main.rs`. You can run it directly to create a proof for a given user action against a policy. The `examples` directory provides a complete end-to-end test case, including pre-defined policy, group, and allowlist files that are compatible with the on-chain contracts.
+
+To run the main prover, use the following command from the `risc0` directory:
+
+```bash
+cargo run --release
+```
 
 ## End-to-End Guide: Deployment and Execution
 
