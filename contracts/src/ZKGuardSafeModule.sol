@@ -107,7 +107,7 @@ contract ZKGuardSafeModule {
         require(claimedGroupsHash == GROUPS_HASH, "groups-hash-mismatch");
         require(claimedAllowHash == ALLOW_HASH, "allow-hash-mismatch");
 
-        // (3) Decode the user action, which now includes the nonce.
+        // (3) Decode the user action.
         (address to, uint256 value, uint256 nonce, bytes memory data) = abi
             .decode(userAction, (address, uint256, uint256, bytes));
 
