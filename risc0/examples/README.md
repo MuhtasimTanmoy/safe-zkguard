@@ -16,6 +16,8 @@ The security policy is defined across three JSON files:
 
 ## How to Run the Prover
 
+By default, the prover runs in dev mode and does not generate a real proof. Set `RISC0_DEV_MODE=0` to generate a real proof.
+
 You can run the prover from the `risc0` directory using a `cargo run` command. You must provide all the necessary details for the transaction you wish to prove.
 
 ### Generic Command Structure
@@ -30,6 +32,8 @@ cargo run --example prover -- \
     --value <VALUE_IN_WEI> \
     --data <HEX_CALLDATA> \
     --private-key <SIGNER_PRIVATE_KEY> \
+    # add --prove to actually generate a proof
+    # --prove \
     --verify-onchain
 ```
 
