@@ -20,5 +20,5 @@ pragma solidity ^0.8.20;
 
 library ImageID {
     bytes32 public constant ZKGUARD_POLICY_ID =
-        bytes32(0x820f809df76be40a70f3255ce945de70879efe71d7e9669930bd1b5009b68b47);
+        bytes32(0x1d4a49a0b8eccf95f0a0d868c59cce3406b45afcc8fd69a29c9329bbda07adf0);
 }

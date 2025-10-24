@@ -62,23 +62,17 @@ pub async fn verify_onchain(
         operation: Operation::Call,
     };
 
-    println!("Smart-Contract Address: {}", contract_address);
+    println!("ZKGuard Module Address: {}", contract_address);
     let address_contract = contract_address.parse::<Address>()?;
 
     // Log the calldata before encodig it
-    println!("Safe address: {}", safe_address);
-    println!(
-        "User action (len={}): {:x?}",
-        calldata.abi_encoded_size(),
-        hex::encode(calldata.abi_encode())
-    );
+    println!("Safe Address: {}", safe_address);
 
     let tx = TransactionRequest::default()
         .with_to(address_contract)
         .with_input(calldata.abi_encode());
 
     let estimate = provider.estimate_gas(tx.clone()).await?;
-    println!("Gas estimate: {}", estimate);
     let tx = tx.with_gas_limit((estimate as f64 * 1.125) as u64); // add 12.5% buffer
 
     let transaction_result = provider

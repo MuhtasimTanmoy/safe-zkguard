@@ -38,3 +38,7 @@ prove = ["risc0-zkvm/prove"]
 [[example]]
 name = "prover"
 path = "examples/prover.rs"
+
+[[bin]]
+name = "compute-hashes"
+path = "tools/compute_hashes.rs"

@@ -55,18 +55,8 @@ fn hash_user_action_keccak256(user_action: &UserAction) -> [u8; 32] {
 fn canonicalise_lists(
     raw: HashMap<String, Vec<[u8; 20]>>,
 ) -> (BTreeMap<String, Vec<[u8; 20]>>, Vec<u8>) {
-    use bincode::Options;
-    let mut canon: BTreeMap<String, Vec<[u8; 20]>> = BTreeMap::new();
-    for (k, mut v) in raw {
-        v.sort();
-        v.dedup();
-        canon.insert(k, v);
-    }
-    let bytes = bincode::DefaultOptions::new()
-        .with_fixint_encoding()
-        .serialize(&canon)
-        .expect("canonical serialise");
-    (canon, bytes)
+    let btree: BTreeMap<String, Vec<[u8; 20]>> = raw.into_iter().collect();
+    zkguard_core::canonicalise_lists(btree)
 }
 
 /// Verifies a Merkle proof for a given leaf against a root.

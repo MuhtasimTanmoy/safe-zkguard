@@ -2,6 +2,7 @@ extern crate alloc;
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::collections::BTreeMap;
 use bincode::Options;
 use serde::{Deserialize, Serialize};
 use risc0_zkvm::sha::{Impl, Sha256};
@@ -48,6 +49,26 @@ impl MerkleHasher for Sha256MerkleHasher {
     }
 }
 
+/// Canonicalises a map of lists: sorts addresses ascending (dedup) and uses
+/// a `BTreeMap` so keys are ordered. Returns `(canonical, bytes)` where
+/// `bytes` is the bincode (fixint) serialization of the canonical structure.
+pub fn canonicalise_lists(
+    raw: BTreeMap<String, Vec<[u8; 20]>>,
+) -> (BTreeMap<String, Vec<[u8; 20]>>, Vec<u8>) {
+    use bincode::Options;
+    let mut canon: BTreeMap<String, Vec<[u8; 20]>> = BTreeMap::new();
+    for (k, mut v) in raw.into_iter() {
+        v.sort();
+        v.dedup();
+        canon.insert(k, v);
+    }
+    let bytes = bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .serialize(&canon)
+        .expect("canonical serialise");
+    (canon, bytes)
+}
+
 /// Compact action enum produced by [`parse_action`]
 #[derive(Clone, Copy, Debug)]
 pub enum Action {
@@ -90,9 +111,6 @@ pub fn hash_policy_line_for_merkle_tree(pl: &PolicyLine) -> [u8; 32] {
         .with_fixint_encoding()
         .serialize(pl)
         .expect("Failed to bincode serialize PolicyLine for hashing");
-
-    // Print the policy bytes for debugging.
-    println!("PolicyLine bytes: {:?}", policy_line_bytes);
 
     // Hash the resulting bytes using the standard `sha2` crate.
     sha2::Sha256::digest(&policy_line_bytes).into()

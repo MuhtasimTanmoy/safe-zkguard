@@ -243,10 +243,6 @@ async fn run_prover(
         hashed_leaves.extend(std::iter::repeat(last).take(pow2 - n));
     }
 
-    println!("Policy leaves:");
-    for (i, h) in hashed_leaves.iter().enumerate() {
-        println!("  {}: 0x{}", i, hex::encode(h));
-    }
     let tree: MerkleTree<Sha256MerkleHasher> = MerkleTree::from_leaves(&hashed_leaves);
     let root = tree.root().expect("Merkle tree should have a root");
     let index = policy_line.id as u32 - 1;
