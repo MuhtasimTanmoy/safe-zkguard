@@ -27,19 +27,22 @@ interface ISafe {
         uint256 payment,
         address payable paymentReceiver
     ) external;
-
     function isModuleEnabled(address module) external view returns (bool);
-}
-
-// --- Helper used via DELEGATECALL inside Safe.setup to self-call enableModule ---
-interface ISafeEnableModule {
     function enableModule(address module) external;
 }
 
 contract SafeModuleSetup {
+    /// @notice Enables multiple modules on the Safe.
+    /// @param modules The list of module addresses to enable.
+    /// @dev This function is intended to be called via DELEGATECALL during Safe.setup
+    ///      to enable modules and then call setSafe on them.
     function enableModules(address[] calldata modules) external {
         for (uint256 i = 0; i < modules.length; i++) {
-            ISafeEnableModule(address(this)).enableModule(modules[i]);
+            // (1) Enable the module on the Safe
+            ISafe(address(this)).enableModule(modules[i]);
+
+            // (2) Call setSafe on the module to bind it to this Safe
+            ZKGuardSafeModule(modules[i]).setSafe(address(this));
         }
     }
 }
@@ -66,7 +69,7 @@ contract DeploySafe is Script {
         bytes32 raw = keccak256(
             abi.encodePacked(bytes1(0xff), factory, salt, initCodeHash)
         );
-        predicted = address(uint160(uint(raw)));
+        predicted = address(uint160(uint256(raw)));
     }
 
     function run() external {
