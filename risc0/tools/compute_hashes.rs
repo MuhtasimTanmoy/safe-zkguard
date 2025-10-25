@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use bincode::Options;
 use rs_merkle::MerkleTree;
 use serde::Deserialize;
 use k256::sha2::{Digest, Sha256};

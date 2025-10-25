@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.21;
 
-import "forge-std/console2.sol";
-
 interface IRiscZeroVerifier {
     function verify(
         bytes calldata seal,
@@ -36,14 +34,14 @@ interface IImageID {
 /// @title ZKGuardSafeModule
 /// @notice A Safe Module that verifies a RISC0 proof attesting that an action
 ///         complies with the ZKGuard policy engine, then executes that action via the Safe.
-/// @dev Journal layout (same as your wrapper):
+/// @dev Journal layout:
 ///      abi.encode(
-///         bytes32 claimed_action_hash,
-///         bytes32 claimed_policy_hash,
-///         bytes32 claimed_groups_hash,
-///         bytes32 claimed_allow_hash
+///         bytes32 claimedActionHash,
+///         bytes32 claimedPolicyHash,
+///         bytes32 claimedGroupsHash,
+///         bytes32 claimedAllowHash
 ///      )
-///      userAction layout (same as your wrapper):
+///      userAction layout
 ///      abi.encode(address to, uint256 value, bytes data, uint256 nonce)
 contract ZKGuardSafeModule {
     /// Immutable verifier + imageId (pinned at construction time).
@@ -51,9 +49,9 @@ contract ZKGuardSafeModule {
     bytes32 public imageId;
     IRiscZeroVerifier public immutable VERIFIER;
     /// Policy root commitments pinned in the module.
-    bytes32 public immutable POLICY_HASH;
-    bytes32 public immutable GROUPS_HASH;
-    bytes32 public immutable ALLOW_HASH;
+    bytes32 public policyHash;
+    bytes32 public groupsHash;
+    bytes32 public allowHash;
 
     event VerifiedAndExecuted(
         address indexed safe,
@@ -75,22 +73,29 @@ contract ZKGuardSafeModule {
         VERIFIER = IRiscZeroVerifier(_verifier);
         imageId = IImageID(_imageId).ZKGUARD_POLICY_ID();
 
-        POLICY_HASH = _policyHash;
-        GROUPS_HASH = _groupsHash;
-        ALLOW_HASH = _allowHash;
+        policyHash = _policyHash;
+        groupsHash = _groupsHash;
+        allowHash = _allowHash;
     }
 
     function installOnSetup(address moduleAddr) external {
         ISafe(address(this)).enableModule(moduleAddr);
     }
 
-    function verifyAndExec(
-        address safe,
-        bytes calldata userAction,
+    function updateHashes(
+        bytes32 newPolicyHash,
+        bytes32 newGroupsHash,
+        bytes32 newAllowHash
+    ) external {
+        policyHash = newPolicyHash;
+        groupsHash = newGroupsHash;
+        allowHash = newAllowHash;
+    }
+
+    function _verify(
         bytes calldata seal,
-        bytes calldata journal,
-        Enum.Operation operation
-    ) external returns (bytes memory returnData) {
+        bytes calldata journal
+    ) internal view returns (bytes32, bytes32) {
         // (1) Verify RISC Zero proof; inherits all invariants enforced by the canonical verifier.
         bytes32 jdig = sha256(journal);
         VERIFIER.verify(seal, imageId, jdig);
@@ -103,30 +108,44 @@ contract ZKGuardSafeModule {
             bytes32 claimedAllowHash
         ) = abi.decode(journal, (bytes32, bytes32, bytes32, bytes32));
 
-        require(claimedPolicyHash == POLICY_HASH, "policy-hash-mismatch");
-        require(claimedGroupsHash == GROUPS_HASH, "groups-hash-mismatch");
-        require(claimedAllowHash == ALLOW_HASH, "allow-hash-mismatch");
+        require(claimedPolicyHash == policyHash, "policy-hash-mismatch");
+        require(claimedGroupsHash == groupsHash, "groups-hash-mismatch");
+        require(claimedAllowHash == allowHash, "allow-hash-mismatch");
 
-        // (3) Decode the user action.
+        // (3) Return claimed action hash for further processing.
+        return (claimedActionHash, jdig);
+    }
+
+    function verifyAndExec(
+        address safe,
+        bytes calldata userAction,
+        bytes calldata seal,
+        bytes calldata journal,
+        Enum.Operation operation
+    ) external returns (bytes memory returnData) {
+        // (1) Verify the proof and journal claims.
+        (bytes32 claimedActionHash, bytes32 jdig) = _verify(seal, journal);
+
+        // (2) Decode the user action.
         (address to, uint256 value, uint256 nonce, bytes memory data) = abi
             .decode(userAction, (address, uint256, uint256, bytes));
 
-        // (4) Bind to exact user action.
+        // (3) Bind to exact user action.
         bytes32 actionHash = keccak256(userAction);
         require(claimedActionHash == actionHash, "action-hash-mismatch");
 
-        // (5) Enforce replay protection by requiring the action's nonce to match the Safe's current nonce.
+        // (4) Enforce replay protection by requiring the action's nonce to match the Safe's current nonce.
         //     This binds the proof to a specific state of the Safe, preventing replay attacks.
         require(nonce == ISafe(safe).nonce(), "invalid-nonce");
 
-        // (6) Execute via the Safe module path (must be enabled on `safe`).
+        // (5) Execute via the Safe module path (must be enabled on `safe`).
         //     If this module is not enabled on `safe`, the call reverts inside the Safe.
         //     Use ReturnData variant so callers can bubble up the target's returndata.
         (bool ok, bytes memory ret) = ISafe(safe)
             .execTransactionFromModuleReturnData(to, value, data, operation);
         require(ok, "safe-exec-failed");
 
-        // (7) Emit event for off-chain indexing.
+        // (6) Emit event for off-chain indexing.
         emit VerifiedAndExecuted(safe, to, value, operation, actionHash, jdig);
         return ret;
     }

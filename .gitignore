@@ -8,3 +8,4 @@ out/
 broadcast/
 lib/
 *.txt
+*.pem
