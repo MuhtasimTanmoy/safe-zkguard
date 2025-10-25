@@ -46,7 +46,7 @@ interface IImageID {
 contract ZKGuardSafeModule {
     /// Immutable verifier + imageId (pinned at construction time).
     /// @notice Image ID of the only zkVM binary to accept verification from.
-    bytes32 public imageId;
+    bytes32 public immutable IMAGE_ID;
     IRiscZeroVerifier public immutable VERIFIER;
     /// Policy root commitments pinned in the module.
     bytes32 public policyHash;
@@ -71,7 +71,7 @@ contract ZKGuardSafeModule {
     ) {
         require(_verifier != address(0), "bad-verifier");
         VERIFIER = IRiscZeroVerifier(_verifier);
-        imageId = IImageID(_imageId).ZKGUARD_POLICY_ID();
+        IMAGE_ID = IImageID(_imageId).ZKGUARD_POLICY_ID();
 
         policyHash = _policyHash;
         groupsHash = _groupsHash;
@@ -98,7 +98,7 @@ contract ZKGuardSafeModule {
     ) internal view returns (bytes32, bytes32) {
         // (1) Verify RISC Zero proof; inherits all invariants enforced by the canonical verifier.
         bytes32 jdig = sha256(journal);
-        VERIFIER.verify(seal, imageId, jdig);
+        VERIFIER.verify(seal, IMAGE_ID, jdig);
 
         // (2) Decode journal claims + enforce against module state.
         (
