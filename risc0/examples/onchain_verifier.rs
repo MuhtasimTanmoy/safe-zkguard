@@ -73,8 +73,8 @@ pub async fn verify_onchain(
         .with_to(address_contract)
         .with_input(calldata.abi_encode());
 
-    //let estimate = provider.estimate_gas(tx.clone()).await?;
-    let tx = tx.with_gas_limit(10000000); //(estimate as f64 * 1.125) as u64); // add 12.5% buffer
+    let estimate = provider.estimate_gas(tx.clone()).await?;
+    let tx = tx.with_gas_limit((estimate as f64 * 1.125) as u64); // add 12.5% buffer
 
     let transaction_result = provider
         .send_transaction(tx)

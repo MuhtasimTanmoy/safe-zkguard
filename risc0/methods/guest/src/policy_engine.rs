@@ -82,14 +82,11 @@ fn hash_user_action(user_action: &UserAction) -> [u8; 32] {
 /// Recovers the signer's address from a 65-byte (r||s||v) Ethereum-style
 /// signature. Returns `None` on failure.
 fn recover_signer(digest: &[u8; 32], signature: &[u8]) -> Option<[u8; 20]> {
-    println!("Recovering signer from signature: {:x?}", signature);
     if signature.len() != 65 {
-        println!("Invalid signature length: {}", signature.len());
         return None; // Invalid signature length
     }
     let (rs, v_byte) = signature.split_at(64);
     let sig = Signature::try_from(rs).ok()?;
-    println!("Parsed signature: {:?}", sig);
 
     // Normalize v to 0 or 1 for k256, from 27/28 in Ethereum
     let v = match v_byte[0] {
@@ -110,7 +107,6 @@ fn recover_signer(digest: &[u8; 32], signature: &[u8]) -> Option<[u8; 20]> {
 
     let mut addr = [0u8; 20];
     addr.copy_from_slice(&keccak_hash[12..]);
-    println!("Address: {:x?}", &addr);
     Some(addr)
 }
 
@@ -120,27 +116,18 @@ fn match_signer(
     ua: &UserAction,
     groups: &HashMap<String, HashSet<[u8; 20]>>,
 ) -> bool {
-    println!("Matching signer pattern: {:?} for UserAction: {:?}", pattern, ua);
     let digest = hash_user_action(ua);
-
-    // Print signatures
-    for (i, sig) in ua.signatures.iter().enumerate() {
-        println!("Signature {}: {:x?}", i, sig);
-    }
 
     match pattern {
         SignerPattern::Any => !ua.signatures.is_empty(), // Any signature is fine, but there must be at least one.
         SignerPattern::Exact(required_signer) => {
-            println!("Verifying Exact signer: {:x?}", required_signer);
             if ua.signatures.len() != 1 {
-                println!("Expected exactly one signature, found {}", ua.signatures.len());
                 return false;
             }
             recover_signer(&digest, &ua.signatures[0])
                 .map_or(false, |signer| &signer == required_signer)
         }
         SignerPattern::Group(name) => {
-            println!("Verifying Group signer: {}", name);
             if ua.signatures.len() != 1 {
                 return false;
             }
@@ -149,10 +136,6 @@ fn match_signer(
                 .map_or(false, |signer| group.contains(&signer))
         }
         SignerPattern::Threshold { group, threshold } => {
-            println!(
-                "Verifying Threshold signer: group={}, threshold={}",
-                group, threshold
-            );
             let required_group = groups.get(group).expect("missing group for threshold");
             let mut valid_signers = HashSet::new();
 
@@ -227,20 +210,17 @@ pub fn run_policy_checks(
 
     // (b) Destination address must match the rule's destination pattern.
     if !match_destination(&rule.destination, &dest_addr, groups, allowlists) {
-        println!("Destination mismatch");
         return false;
     }
 
     // (c) The action's signer(s) must match the rule's signer pattern.
     // This check now includes signature verification.
     if !match_signer(&rule.signer, user_action, groups) {
-        println!("Signer mismatch");
         return false;
     }
 
     // (d) The action's asset must match the rule's asset pattern.
     if !match_asset(&rule.asset, &asset_addr) {
-        println!("Asset mismatch");
         return false;
     }
 
@@ -248,7 +228,6 @@ pub fn run_policy_checks(
     if tx_type == TxType::Transfer {
         if let Some(max_amount) = rule.amount_max {
             if amount > max_amount {
-                println!("Amount exceeds max");
                 return false; // Amount exceeds the maximum allowed by the policy
             }
         }
@@ -258,7 +237,6 @@ pub fn run_policy_checks(
     if tx_type == TxType::ContractCall {
         if let Some(function_selector) = rule.function_selector {
             if user_action.data.len() < 4 || user_action.data[..4] != function_selector {
-                println!("Function selector mismatch");
                 return false; // Function selector doesn't match the policy
             }
         }
@@ -266,7 +244,6 @@ pub fn run_policy_checks(
 
     // (g) A special case: ContractCall rules should not specify a specific asset.
     if tx_type == TxType::ContractCall && !matches!(rule.asset, AssetPattern::Any) {
-        println!("Contract call with specific asset");
         return false;
     }
 
