@@ -153,7 +153,7 @@ Fill in the variables in `contracts/.env` for Safe Wallet Deployment:
 - `NICK_SEED`: A 32-byte hex value (0x-prefixed). Acts as a non-secret seed/salt used for deterministic operations in scripts.
 - `SAFE_SALT_NONCE`: Arbitrary nonce for deterministic Safe address derivation;
 
-Before computing the policy hash, you **must** first fill the first policy (id: 1) with the address of the deployed ZKGuard module. This allows updating policies, groups and allowlists in the module by defining a policy for it.
+**Before computing the policy hash, you must first fill the first policy (id: 1) with the address of the deployed ZKGuard module. This allows updating policies, groups and allowlists in the module by defining a policy for it. If you do NOT define such a policy, no updates can happen, and therefore, there is no way to update the policy, groups, or allow list.**
 
 ```bash
 cargo run --release --bin compute-hashes -- \
