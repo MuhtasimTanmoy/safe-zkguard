@@ -1,14 +1,14 @@
 extern crate alloc;
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::collections::BTreeMap;
 use bincode::Options;
-use serde::{Deserialize, Serialize};
 use risc0_zkvm::sha::{Impl, Sha256};
 use rs_merkle::Hasher as MerkleHasher;
-use tiny_keccak::Keccak;
+use serde::{Deserialize, Serialize};
 use sha2::Digest;
+use tiny_keccak::Keccak;
 ////////////////////////////////////////////////////////////////
 //  Public constants (grouped so callers can use `constants::*`)
 ////////////////////////////////////////////////////////////////
@@ -130,6 +130,8 @@ pub enum TxType {
 pub enum DestinationPattern {
     /// Matches any address.
     Any,
+    /// Matches a specific address.
+    Exact([u8; 20]),
     /// Matches if the address is contained in the named group.
     Group(String),
     /// Matches if the address is contained in the named allow-list.
@@ -184,11 +186,12 @@ pub const ETH_ASSET: [u8; 20] = [0u8; 20];
 /// executed on-chain
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserAction {
-    pub to: [u8; 20],               // target contract or direct recipient
-    pub value: u128,                // native token amount (wei)
-    pub nonce: u64,                // Safe's current nonce for replay protection
-    pub data: Vec<u8>,              // calldata (empty for plain ETH transfers)
-    pub signatures: Vec<Vec<u8>>,   // one or more Ethereum-style signatures (65 bytes each)
+    pub from: [u8; 20],           // contract address initiating the action
+    pub to: [u8; 20],             // target contract or direct recipient
+    pub value: u128,              // native token amount (wei)
+    pub nonce: u64,               // Safe's current nonce for replay protection
+    pub data: Vec<u8>,            // calldata (empty for plain ETH transfers)
+    pub signatures: Vec<Vec<u8>>, // one or more Ethereum-style signatures (65 bytes each)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

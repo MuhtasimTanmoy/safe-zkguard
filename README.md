@@ -107,7 +107,7 @@ forge create src/ImageID.sol:ImageID --rpc-url <YOUR_RPC_URL> --private-key <YOU
 
 Take note of the deployed `ImageID` contract address.
 
-### Step 3: Configure `contracts/.env`
+### Step 3: Configure `contracts/.env` for Module Deployment
 
 Create a local env file for contract deployment and configuration:
 
@@ -118,43 +118,70 @@ cp -n .env.template .env
 
 Now fill in the variables in `contracts/.env`:
 
+For Module Deployment:
 - `RISC0_VERIFIER` (or Router): Address of the RISC Zero on-chain verifier. Prefer the Router if available on your target chain; otherwise use the Groth16 verifier for your proof system. See [Verifier Contracts](https://dev.risczero.com/api/blockchain-integration/contracts/verifier)
 - `RISC0_IMAGE_ID`: Address of the `ImageID` contract you deployed in Step 2.
-- `NICK_SEED`: A 32-byte hex value (0x-prefixed). Acts as a non-secret seed/salt used for deterministic operations in scripts.
-- `POLICY_HASH`, `GROUPS_HASH`, `ALLOW_HASH`: Hashes of your policy, groups, and allowlists used by the verifier. You can ompute them via the helper tool below.
-- `SAFE_SINGLETON`, `SAFE_PROXY_FACTORY`, `SAFE_FALLBACK_HANDLER`: Safe{Wallet} canonical addresses for your network. See [Safe deployments](https://github.com/safe-global/safe-deployments)
-- `SAFE_SALT_NONCE`: Arbitrary nonce for deterministic Safe address derivation;
-- 
-Compute the hashes and paste them into `contracts/.env`:
+- `GROUPS_HASH`, `ALLOW_HASH`: Hashes of your groups, and allowlists used by the verifier. You can compute them via the helper tool below.
 
 ```bash
 cargo run --release --bin compute-hashes -- \
-  --policy  examples/policy.json \
   --groups  examples/groups.json \
   --allow   examples/allowlists.json
+
 # prints:
-# POLICY_HASH=0x...
 # GROUPS_HASH=0x...
-# ALLOW_HASH=0x...
+# ALLOW_HASH=0X...
 ```
 
-### Step 4: Deploy the ZKGuardSafeModule and Safe Wallet
+### Step 4: Deploy the ZKGuard Module
 
-This script deploys the `ZKGuardSafeModule` and a new Gnosis Safe, then enables the module on the Safe.
+This script deploys the `ZKGuardSafeModule`:
 
 ```bash
-forge script script/DeployModuleAndSafe.s.sol:DeploySafe --rpc-url <YOUR_RPC_URL> --private-key <YOUR_PRIVATE_KEY> --via-ir --broadcast -vvvvv
+forge script script/DeployModule.s.sol:DeployModule --rpc-url <YOUR_RPC_URL> --private-key <YOUR_PRIVATE_KEY> --via-ir --broadcast -vvvvv
 ```
 
-Take note of the deployed `ZKGuardSafeModule` address and the new `Safe` address from the script output.
+Take note of the deployed `ZKGuardSafeModule` address.
 
-### Step 5: Set `.env` Variables for Prover Interaction
+### Step 5: Configure `contracts/.env` for Safe Deployment
 
-Create or update a `.env` file in this `risc0` directory (this is separate from the one in `contracts`). Refer to `.env.example` for the required variables. You must include the `MODULE_ADDRESS` and `SAFE_ADDRESS` that were deployed in the previous step.
+Fill in the variables in `contracts/.env` for Safe Wallet Deployment:
 
-### Step 6: Create a Proof and Execute On-Chain
+- `SAFE_SINGLETON`, `SAFE_PROXY_FACTORY`, `SAFE_FALLBACK_HANDLER`: Safe{Wallet} canonical addresses for your network. See [Safe deployments](https://github.com/safe-global/safe-deployments)
+- `ZKGUARD_MODULE_ADDRESS`: Address of the previously deployed module
+- `POLICY_HASH`: Hash of the policy used by the verifier. You can compute them via the helper tool below.
+- `NICK_SEED`: A 32-byte hex value (0x-prefixed). Acts as a non-secret seed/salt used for deterministic operations in scripts.
+- `SAFE_SALT_NONCE`: Arbitrary nonce for deterministic Safe address derivation;
+
+Before computing the policy hash, you **must** first fill the first policy (id: 1) with the address of the deployed ZKGuard module. This allows updating policies, groups and allowlists in the module by defining a policy for it.
+
+```bash
+cargo run --release --bin compute-hashes -- \
+  --policy  examples/policy.json
+
+# prints:
+# POLICY_HASH=0x...
+```
+
+### Step 6: Deploy the Safe Wallet
+
+This script deploys the Safe Wallet, enabling the previously deployed module in it.
+
+```bash
+forge script script/DeploySafe.s.sol:DeploySafe --rpc-url <YOUR_RPC_URL> --private-key <YOUR_PRIVATE_KEY> --via-ir --broadcast -vvvvv
+```
+
+Take note of the deployed `Safe` address from the script output.
+
+### Step 7: Set `.env` Variables for Prover Interaction
+
+Create or update a `.env` file in this `risc0` directory (this is separate from the one in `contracts`). Refer to `.env.example` for the required variables. You must include the `MODULE_ADDRESS` and `SAFE_ADDRESS` that were deployed in previous steps.
+
+### Step 8: Create a Proof and Execute On-Chain
 
 Run the `prover` example to generate a proof and send the transaction for verification and execution. The command requires you to specify the policy files, the rule ID, and the full details of the user action.
+
+**Important:** The `from` address defined here **must** match the deployed Safe Wallet address.
 
 ```bash
 cargo run --release --example prover -- \
@@ -162,6 +189,7 @@ cargo run --release --example prover -- \
     --groups-file risc0/examples/groups.json \
     --allowlists-file risc0/examples/allowlists.json \
     --rule-id <RULE_ID> \
+    --from <FROM_ADDRESS> \
     --to <TO_ADDRESS> \
     --value <VALUE_IN_WEI> \
     --data <HEX_CALLDATA> \
