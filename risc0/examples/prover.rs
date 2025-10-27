@@ -417,14 +417,9 @@ async fn main() -> Result<()> {
 
     let mut signatures: Vec<Vec<u8>> = Vec::new();
     for pk_hex in &args.private_keys {
-        println!("Using private key: {}", pk_hex);
         let sk =
             SigningKey::from_slice(&hex::decode(pk_hex.strip_prefix("0x").unwrap_or(pk_hex))?)?;
         let (signature, recovery_id) = sk.sign_prehash_recoverable(&message_hash)?;
-        println!(
-            "Generated signature: 0x{}",
-            hex::encode(signature.to_bytes().as_slice())
-        );
         let mut sig_bytes = signature.to_bytes().to_vec();
         sig_bytes.push(recovery_id.to_byte() + 27);
         signatures.push(sig_bytes);
