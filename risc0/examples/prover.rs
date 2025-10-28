@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use tiny_keccak::{Hasher, Keccak};
+use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
 use zkguard_core::{hash_policy_line_for_merkle_tree, MerklePath, Sha256MerkleHasher, UserAction};
 use zkguard_methods::{ZKGUARD_POLICY_ELF, ZKGUARD_POLICY_ID};
@@ -195,15 +196,15 @@ fn decode_public_input(hex_blob: &str) -> anyhow::Result<PublicInput> {
     Ok(decoded)
 }
 
-fn print_public_input(pi: &PublicInput) {
+fn log_public_input(pi: &PublicInput) {
     use alloy_primitives::B256;
     fn h(b: &B256) -> String {
         format!("0x{}", hex::encode(b.as_slice()))
     }
-    println!("claimedActionHash = {}", h(&pi.claimedActionHash));
-    println!("claimedPolicyHash = {}", h(&pi.claimedPolicyHash));
-    println!("claimedGroupsHash = {}", h(&pi.claimedGroupsHash));
-    println!("claimedAllowHash  = {}", h(&pi.claimedAllowHash));
+    info!("claimedActionHash = {}", h(&pi.claimedActionHash));
+    info!("claimedPolicyHash = {}", h(&pi.claimedPolicyHash));
+    info!("claimedGroupsHash = {}", h(&pi.claimedGroupsHash));
+    info!("claimedAllowHash  = {}", h(&pi.claimedAllowHash));
 }
 
 pub fn encode_seal(receipt: &risc0_zkvm::Receipt) -> Result<Vec<u8>, anyhow::Error> {
@@ -236,11 +237,11 @@ async fn run_prover(
     allowlists: &HashMap<String, Vec<[u8; 20]>>,
     verify_onchain_flag: bool,
 ) -> Result<()> {
-    println!("ACTION_FROM=0x{}", hex::encode(user_action.from));
-    println!("ACTION_TO=0x{}", hex::encode(user_action.to));
-    println!("ACTION_VALUE={}", user_action.value);
-    println!("ACTION_DATA=0x{}", hex::encode(&user_action.data));
-    println!("ACTION_NONCE={}", user_action.nonce);
+    debug!("ACTION_FROM=0x{}", hex::encode(user_action.from));
+    debug!("ACTION_TO=0x{}", hex::encode(user_action.to));
+    debug!("ACTION_VALUE={}", user_action.value);
+    debug!("ACTION_DATA=0x{}", hex::encode(&user_action.data));
+    debug!("ACTION_NONCE={}", user_action.nonce);
 
     let mut hashed_leaves = policy
         .iter()
@@ -266,14 +267,14 @@ async fn run_prover(
     };
 
     let root_bytes = encode(&root.to_vec());
-    println!("Policy Merkle Root: 0x{}", hex::encode(root));
+    info!("Policy Merkle Root: 0x{}", hex::encode(root));
     let user_action_bytes = encode(user_action);
     let leaf_bytes = encode(policy_line);
     let path_bytes = encode(&merkle_path);
     let group_bytes = encode(groups);
     let allow_bytes = encode(allowlists);
 
-    println!("[{}] Proving...", policy_line.id);
+    info!("[{}] Proving...", policy_line.id);
 
     let receipt = tokio::task::spawn_blocking(move || {
         let env = ExecutorEnv::builder()
@@ -300,26 +301,26 @@ async fn run_prover(
     .await?;
 
     let journal_bytes = receipt.journal.bytes.clone();
-    println!("Journal hex: 0x{}", hex::encode(&journal_bytes));
-    println!("[{}] Proved!", policy_line.id);
+    debug!("Journal hex: 0x{}", hex::encode(&journal_bytes));
+    info!("[{}] Proved!", policy_line.id);
 
     let onchain_seal = encode_seal(&receipt)?;
-    println!("On-chain seal hex: 0x{}", hex::encode(&onchain_seal));
-    println!(
+    debug!("On-chain seal hex: 0x{}", hex::encode(&onchain_seal));
+    debug!(
         "Image ID: 0x{}",
         hex::encode(bytemuck::cast_slice(&ZKGUARD_POLICY_ID))
     );
-    print_public_input(&decode_public_input(&format!(
+    log_public_input(&decode_public_input(&format!(
         "0x{}",
         hex::encode(&journal_bytes)
     ))?);
 
-    println!("[{}] Verifying...", policy_line.id);
+    info!("[{}] Verifying...", policy_line.id);
     receipt.verify(ZKGUARD_POLICY_ID)?;
-    println!("[{}] Verified!", policy_line.id);
+    info!("[{}] Verified!", policy_line.id);
 
     if verify_onchain_flag {
-        println!("[{}] Verifying on-chain...", policy_line.id);
+        info!("[{}] Verifying on-chain...", policy_line.id);
         let private_key = std::env::var("WALLET_PRIV_KEY").expect("WALLET_PRIV_KEY must be set");
         let eth_rpc_url = std::env::var("ETH_RPC_URL").expect("ETH_RPC_URL must be set");
         let contract_address = std::env::var("MODULE_ADDRESS").expect("MODULE_ADDRESS must be set");
@@ -337,7 +338,7 @@ async fn run_prover(
             user_action.nonce,
         )
         .await?;
-        println!("[{}] Verified on-chain!", policy_line.id);
+        info!("[{}] Verified on-chain!", policy_line.id);
     }
 
     Ok(())

@@ -38,10 +38,10 @@ Policies are defined using Rust structs and enums located in the `zkguard_core` 
 
 We outline a simple application for generating a proof in `src/main.rs`. You can run it directly to create a proof for a given user action against a policy. The `examples` directory provides a complete end-to-end test case, including pre-defined policy, group, and allowlist files that are compatible with the on-chain contracts.
 
-To run the main prover, use the following command from the `risc0` directory. By default, dev mode skips proof generation, set `RISC0_DEV_MODE=0` to generate a real proof.
+To run the main prover, use the following command from the `risc0` directory. By default, dev mode skips proof generation, set `RISC0_DEV_MODE=0` to generate a real proof. **Important**: This simply provides a toy example, for a more robust and usable version, please see `examples/prover.rs`
 
 ```bash
-cargo run --release
+cargo run --release --bin zkguard-auth-policy
 ```
 
 ## End-to-End Guide: Deployment and Execution

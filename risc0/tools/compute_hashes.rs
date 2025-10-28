@@ -5,6 +5,8 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::BufReader;
+use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
 use zkguard_core::{
     hash_policy_line_for_merkle_tree, AssetPattern as CoreAssetPattern,
     DestinationPattern as CoreDestinationPattern, PolicyLine as CorePolicyLine, Sha256MerkleHasher,
@@ -165,6 +167,8 @@ fn main() -> Result<()> {
     }
 
     let args = Args::parse();
+    let filter = EnvFilter::new("info");
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     // Track whether we did anything
     let mut did_any = false;
@@ -186,7 +190,7 @@ fn main() -> Result<()> {
         }
         let tree: MerkleTree<Sha256MerkleHasher> = MerkleTree::from_leaves(&leaves);
         let root = tree.root().context("empty policy: no root")?;
-        println!("POLICY_HASH={}", root_hex_prefixed(root));
+        info!("POLICY_HASH={}", root_hex_prefixed(root));
         did_any = true;
     }
 
@@ -207,7 +211,7 @@ fn main() -> Result<()> {
             groups_btree.insert(k, addrs);
         }
         let (_canon_groups, groups_bytes) = zkguard_core::canonicalise_lists(groups_btree);
-        println!("GROUPS_HASH={}", sha256_hex_prefixed(&groups_bytes));
+        info!("GROUPS_HASH={}", sha256_hex_prefixed(&groups_bytes));
         did_any = true;
     }
 
@@ -228,13 +232,13 @@ fn main() -> Result<()> {
             allow_btree.insert(k, addrs);
         }
         let (_canon_allow, allow_bytes) = zkguard_core::canonicalise_lists(allow_btree);
-        println!("ALLOW_HASH={}", sha256_hex_prefixed(&allow_bytes));
+        info!("ALLOW_HASH={}", sha256_hex_prefixed(&allow_bytes));
         did_any = true;
     }
 
     // Nothing requested
     if !did_any {
-        eprintln!("No inputs provided. Use --policy, --groups, and/or --allow.");
+        error!("No inputs provided. Use --policy, --groups, and/or --allow.");
     }
 
     Ok(())

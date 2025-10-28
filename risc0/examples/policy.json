@@ -3,7 +3,7 @@
     "id": 1,
     "tx_type": "ContractCall",
     "destination": {
-      "Exact": "0x5833115f8FFC62b708C3fD8287586C2f09Bc7624"
+      "Exact": "0xFD02c2291fb4F832831666Df5960A590d5e231cF"
     },
     "signer": {
       "Exact": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"

@@ -30,6 +30,7 @@ fn hash_user_action(ua: &UserAction) -> [u8; 32] {
     let mut output = [0u8; 32];
 
     // 3. Update the hasher with data
+    h.update(&ua.from);
     h.update(&ua.to);
     h.update(&ua.value.to_be_bytes());
     h.update(&ua.data);
@@ -171,29 +172,6 @@ fn main() -> Result<()> {
     let path_bytes = encode(&merkle_path);
     let group_bytes = encode(&groups);
     let allow_bytes = encode(&allows);
-
-    println!("[ZKGuard] Writing frames to the prover environment...");
-    println!(
-        "[ZKGuard] Policy Merkle root length in bytes: {:?}",
-        root_bytes.len()
-    );
-    println!(
-        "[ZKGuard] User action length in bytes: {:?}",
-        user_action_bytes.len()
-    );
-    println!(
-        "[ZKGuard] Policy line length in bytes: {:?}",
-        leaf_bytes.len()
-    );
-    println!(
-        "[ZKGuard] Merkle path length in bytes: {:?}",
-        path_bytes.len()
-    );
-    println!("[ZKGuard] Groups length in bytes: {:?}", group_bytes.len());
-    println!(
-        "[ZKGuard] Allow-lists length in bytes: {:?}",
-        allow_bytes.len()
-    );
 
     // ---------------------------------------------------------------------
     // Prove

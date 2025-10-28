@@ -10,20 +10,26 @@ use alloy::{
 };
 use alloy_sol_types::{SolCall, SolValue};
 use anyhow::{Context, Result};
+use tracing::{error, info};
 use url::Url;
 
 sol! {
-    enum Operation {
-        Call,
-        DelegateCall
-    }
-
+    #[sol(rpc)]
     interface IZKGuardSafeModule {
+        event VerifiedAndExecuted(
+            address indexed safe,
+            address indexed to,
+            uint256 value,
+            uint8 operation,
+            bytes32 actionHash,
+            bytes32 journalDigest
+        );
+
         function verifyAndExec(
             bytes calldata userAction,
             bytes calldata seal,
             bytes calldata journal,
-            Operation operation
+            uint8 operation
         ) external returns (bytes memory returnData);
     }
 }
@@ -60,14 +66,14 @@ pub async fn verify_onchain(
         userAction: user_action.into(),
         seal: onchain_seal.into(),
         journal: onchain_journal.into(),
-        operation: Operation::Call,
+        operation: 0, // 0 = Call
     };
 
-    println!("ZKGuard Module Address: {}", contract_address);
+    info!("ZKGuard Module Address: {}", contract_address);
     let address_contract = contract_address.parse::<Address>()?;
 
     // Log the calldata before encodig it
-    println!("Safe Address: {}", safe_address);
+    info!("Safe Address: {}", safe_address);
 
     let tx = TransactionRequest::default()
         .with_to(address_contract)
@@ -82,10 +88,40 @@ pub async fn verify_onchain(
         .context("Failed to send transaction")?;
 
     let tx_hash = transaction_result.tx_hash();
-    println!("\nTransaction sent with hash: {} \n", tx_hash);
+    info!("\nTransaction sent with hash: {} \n", tx_hash);
 
     let receipt = transaction_result.get_receipt().await?;
-    println!("Transaction receipt: {:?}", receipt);
+    info!("Transaction receipt: {:?}", receipt);
+
+    // Check if the transaction was successful
+    if receipt.status() {
+        info!("Transaction succeeded");
+    } else {
+        error!("Transaction failed");
+    }
+
+    // Decode and log the VerifiedAndExecuted event
+    if let Some(ev) = receipt.decoded_log::<IZKGuardSafeModule::VerifiedAndExecuted>() {
+        info!("VerifiedAndExecuted event found:");
+
+        let IZKGuardSafeModule::VerifiedAndExecuted {
+            safe,
+            to,
+            value,
+            operation,
+            actionHash,
+            journalDigest,
+        } = ev.data;
+
+        info!("  Safe: {}", safe);
+        info!("  To: {}", to);
+        info!("  Value: {}", value);
+        info!("  Operation: {}", operation);
+        info!("  ActionHash: {:?}", actionHash);
+        info!("  JournalDigest: {:?}", journalDigest);
+    } else {
+        error!("VerifiedAndExecuted event not found in receipt logs");
+    }
 
     Ok(())
 }
