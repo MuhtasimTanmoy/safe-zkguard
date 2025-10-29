@@ -1,8 +1,5 @@
-// SPDX-License-Identifier: Apache-2.0
 // A minimal policy engine that evaluates on-chain user actions against a
-// single, pre-verified policy line. The implementation follows the
-// design brief dated 2025-06-14 and was updated for the ZKGuard architecture.
-
+// single, pre-verified policy line.
 extern crate alloc;
 
 use alloc::string::String;
@@ -46,7 +43,7 @@ fn parse_erc20_transfer(data: &[u8]) -> Option<([u8; 20], u128)> {
     Some((to, amount))
 }
 
-/// Evaluate an address against a *destination* pattern.
+/// Evaluate an address against a destination pattern.
 fn match_destination(
     pattern: &DestinationPattern,
     addr: &[u8; 20],
@@ -63,7 +60,8 @@ fn match_destination(
     }
 }
 
-// Use the standard streaming API from `tiny-keccak`.
+// TODO: Merge into zkguard_core to avoid duplication
+// Hashes user action fields using Keccak-256
 fn hash_user_action(user_action: &UserAction) -> [u8; 32] {
     let mut hasher = Keccak::v256();
     let mut output = [0u8; 32];
@@ -78,7 +76,6 @@ fn hash_user_action(user_action: &UserAction) -> [u8; 32] {
     output
 }
 
-/// Recovers the signer's address from a 65-byte (r||s||v) Ethereum-style
 /// Recovers the signer's address from a 65-byte (r||s||v) Ethereum-style
 /// signature. Returns `None` on failure.
 fn recover_signer(digest: &[u8; 32], signature: &[u8]) -> Option<[u8; 20]> {
@@ -183,7 +180,7 @@ fn classify_user_action(user_action: &UserAction) -> (TxType, [u8; 20], [u8; 20]
 }
 
 /*───────────────────────────────────────────────────────────────────────────*
- * The Policy Engine (Refactored)                                           *
+ * The Policy Engine                                  *
  *───────────────────────────────────────────────────────────────────────────*/
 
 /// Evaluates a `UserAction` against a single `PolicyLine`. Returns `true` if

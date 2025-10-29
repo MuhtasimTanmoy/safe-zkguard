@@ -21,6 +21,7 @@ use zkguard_methods::{ZKGUARD_POLICY_ELF, ZKGUARD_POLICY_ID};
 mod onchain_verifier;
 
 sol! {
+    // Should match the PublicInput struct in the guest code
     struct PublicInput {
         bytes32 claimedActionHash;
         bytes32 claimedPolicyHash;
@@ -29,6 +30,7 @@ sol! {
     }
 }
 
+// Command-line arguments
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
@@ -56,6 +58,7 @@ struct Args {
     verify_onchain: bool,
 }
 
+// Policy line structure for deserialization from JSON
 #[derive(Deserialize, Debug, Clone)]
 pub struct PolicyLine {
     pub id: u32,
@@ -171,6 +174,7 @@ impl From<AssetPattern> for zkguard_core::AssetPattern {
     }
 }
 
+// Helper function to encode data using bincode with fixed integer encoding
 fn encode<T: serde::Serialize>(data: &T) -> Vec<u8> {
     bincode::DefaultOptions::new()
         .with_fixint_encoding()
@@ -178,6 +182,7 @@ fn encode<T: serde::Serialize>(data: &T) -> Vec<u8> {
         .unwrap()
 }
 
+// Hashes the user action into a 32-byte array using Keccak-256
 fn hash_user_action(ua: &UserAction) -> [u8; 32] {
     let mut h = Keccak::v256();
     let mut output = [0u8; 32];
@@ -207,6 +212,8 @@ fn log_public_input(pi: &PublicInput) {
     info!("claimedAllowHash  = {}", h(&pi.claimedAllowHash));
 }
 
+// Encodes the receipt's seal for on-chain verification
+// This is required to match the expected format in the smart contract
 pub fn encode_seal(receipt: &risc0_zkvm::Receipt) -> Result<Vec<u8>, anyhow::Error> {
     let seal = match receipt.inner.clone() {
         InnerReceipt::Fake(receipt) => {
@@ -229,6 +236,7 @@ pub fn encode_seal(receipt: &risc0_zkvm::Receipt) -> Result<Vec<u8>, anyhow::Err
     Ok(seal)
 }
 
+// Runs the prover for the given policy line and user action, it also handles on-chain verification if specified
 async fn run_prover(
     policy: &Vec<zkguard_core::PolicyLine>,
     policy_line: &zkguard_core::PolicyLine,
@@ -250,30 +258,34 @@ async fn run_prover(
 
     let n = hashed_leaves.len();
     let pow2 = n.next_power_of_two();
+    // TODO: Improve this to avoid duplicating the last leaf
     if pow2 > n {
         let last = *hashed_leaves.last().expect("at least one leaf");
         hashed_leaves.extend(std::iter::repeat(last).take(pow2 - n));
     }
 
+    // Build the policy tree from the policy
     let tree: MerkleTree<Sha256MerkleHasher> = MerkleTree::from_leaves(&hashed_leaves);
     let root = tree.root().expect("Merkle tree should have a root");
     let index = policy_line.id as u32 - 1;
     let proof = tree.proof(&[index as usize]);
     let path_hashes: Vec<[u8; 32]> = proof.proof_hashes().to_vec();
 
+    // Proof of policy membership
     let merkle_path = MerklePath {
         leaf_index: index as u64,
         siblings: path_hashes.clone(),
     };
 
+    // Encode inputs to send to the guest for proving.
     let root_bytes = encode(&root.to_vec());
-    info!("Policy Merkle Root: 0x{}", hex::encode(root));
     let user_action_bytes = encode(user_action);
     let leaf_bytes = encode(policy_line);
     let path_bytes = encode(&merkle_path);
     let group_bytes = encode(groups);
     let allow_bytes = encode(allowlists);
 
+    info!("Policy Merkle Root: 0x{}", hex::encode(root));
     info!("[{}] Proving...", policy_line.id);
 
     let receipt = tokio::task::spawn_blocking(move || {
@@ -287,6 +299,7 @@ async fn run_prover(
             .build()
             .unwrap();
 
+        // Run the prover and build a Groth16 proof
         let prover = default_prover();
         prover
             .prove_with_ctx(
@@ -300,10 +313,12 @@ async fn run_prover(
     })
     .await?;
 
+    // Extract the journal and log it
     let journal_bytes = receipt.journal.bytes.clone();
     debug!("Journal hex: 0x{}", hex::encode(&journal_bytes));
     info!("[{}] Proved!", policy_line.id);
 
+    // Prepare the on-chain seal
     let onchain_seal = encode_seal(&receipt)?;
     debug!("On-chain seal hex: 0x{}", hex::encode(&onchain_seal));
     debug!(
@@ -316,9 +331,11 @@ async fn run_prover(
     ))?);
 
     info!("[{}] Verifying...", policy_line.id);
+    // First, verify the receipt off-chain, in case of failure we won't attempt on-chain verification
     receipt.verify(ZKGUARD_POLICY_ID)?;
     info!("[{}] Verified!", policy_line.id);
 
+    // If specified, perform on-chain verification
     if verify_onchain_flag {
         info!("[{}] Verifying on-chain...", policy_line.id);
         let private_key = std::env::var("WALLET_PRIV_KEY").expect("WALLET_PRIV_KEY must be set");
@@ -331,11 +348,7 @@ async fn run_prover(
             &contract_address,
             onchain_seal,
             journal_bytes,
-            user_action.from.to_vec(),
-            user_action.to.to_vec(),
-            user_action.value,
-            user_action.data.clone(),
-            user_action.nonce,
+            &user_action,
         )
         .await?;
         info!("[{}] Verified on-chain!", policy_line.id);
@@ -360,6 +373,7 @@ async fn main() -> Result<()> {
     let filter = EnvFilter::new("debug");
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
+    // Load and parse policy file
     let policy_file = File::open(args.policy_file)?;
     let reader = BufReader::new(policy_file);
     let json_policy: Vec<PolicyLine> = serde_json::from_reader(reader)?;
@@ -368,6 +382,7 @@ async fn main() -> Result<()> {
         .map(|policy| policy.into())
         .collect();
 
+    // Load and parse groups file
     let groups_file = File::open(args.groups_file)?;
     let reader = BufReader::new(groups_file);
     let json_groups: HashMap<String, Vec<String>> = serde_json::from_reader(reader)?;
@@ -382,6 +397,7 @@ async fn main() -> Result<()> {
         })
         .collect();
 
+    // Load and parse allowlists file
     let allowlists_file = File::open(args.allowlists_file)?;
     let reader = BufReader::new(allowlists_file);
     let json_allowlists: HashMap<String, Vec<String>> = serde_json::from_reader(reader)?;
@@ -396,12 +412,14 @@ async fn main() -> Result<()> {
         })
         .collect();
 
+    // Find the specified policy line by rule_id
     let policy_line = policy
         .iter()
         .find(|p| p.id == args.rule_id)
         .ok_or_else(|| anyhow::anyhow!("Policy line with id {} not found", args.rule_id))?
         .clone();
 
+    // Build the user action from command-line arguments
     let from = parse_hex_address(&args.from)?;
     let to = parse_hex_address(&args.to)?;
     let data = hex::decode(args.data.strip_prefix("0x").unwrap_or(&args.data))?;
@@ -413,9 +431,9 @@ async fn main() -> Result<()> {
         data,
         signatures: vec![],
     };
-
     let message_hash = hash_user_action(&user_action);
 
+    // Sign the user action with the provided private keys
     let mut signatures: Vec<Vec<u8>> = Vec::new();
     for pk_hex in &args.private_keys {
         let sk =
@@ -428,6 +446,7 @@ async fn main() -> Result<()> {
 
     user_action.signatures = signatures;
 
+    // Run the prover with the specified parameters
     run_prover(
         &policy,
         &policy_line,

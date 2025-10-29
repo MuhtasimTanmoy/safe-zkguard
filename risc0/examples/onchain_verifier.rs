@@ -12,9 +12,11 @@ use alloy_sol_types::{SolCall, SolValue};
 use anyhow::{Context, Result};
 use tracing::{error, info};
 use url::Url;
+use zkguard_core::UserAction;
 
 sol! {
     #[sol(rpc)]
+    // Should match the interface of the ZKGuard Safe Module contract
     interface IZKGuardSafeModule {
         event VerifiedAndExecuted(
             address indexed safe,
@@ -34,17 +36,15 @@ sol! {
     }
 }
 
+// Sends a transaction to the ZKGuard Safe Module contract to verify and execute
+// a user action using the provided on-chain seal and journal.
 pub async fn verify_onchain(
     private_key: &str,
     eth_rpc_url: &str,
     contract_address: &str,
     onchain_seal: Vec<u8>,
     onchain_journal: Vec<u8>,
-    from: Vec<u8>,
-    to: Vec<u8>,
-    value: u128,
-    data: Vec<u8>,
-    nonce: u64,
+    user_action: &UserAction,
 ) -> Result<(), anyhow::Error> {
     let private_key_signer = private_key.parse::<PrivateKeySigner>()?;
     let wallet = EthereumWallet::from(private_key_signer.clone());
@@ -53,17 +53,22 @@ pub async fn verify_onchain(
 
     let safe_address_str = std::env::var("SAFE_ADDRESS").expect("SAFE_ADDRESS must be set");
     let safe_address = safe_address_str.parse::<Address>()?;
+    let from_addr = Address::from_slice(&user_action.from);
+    let to_addr = Address::from_slice(&user_action.to);
+    let val_u256 = U256::from(user_action.value);
+    let nonce_u256 = U256::from(user_action.nonce);
 
-    let from_addr = Address::from_slice(&from);
-    let to_addr = Address::from_slice(&to);
-    let val_u256 = U256::from(value);
-    let nonce_u256 = U256::from(nonce);
-
-    let user_action =
-        (from_addr, to_addr, val_u256, nonce_u256, Bytes::from(data)).abi_encode_params();
+    let abi_encoded_user_action = (
+        from_addr,
+        to_addr,
+        val_u256,
+        nonce_u256,
+        Bytes::from(user_action.data.clone()),
+    )
+        .abi_encode_params();
 
     let calldata = IZKGuardSafeModule::verifyAndExecCall {
-        userAction: user_action.into(),
+        userAction: abi_encoded_user_action.into(),
         seal: onchain_seal.into(),
         journal: onchain_journal.into(),
         operation: 0, // 0 = Call
@@ -72,7 +77,6 @@ pub async fn verify_onchain(
     info!("ZKGuard Module Address: {}", contract_address);
     let address_contract = contract_address.parse::<Address>()?;
 
-    // Log the calldata before encodig it
     info!("Safe Address: {}", safe_address);
 
     let tx = TransactionRequest::default()
@@ -101,7 +105,7 @@ pub async fn verify_onchain(
     }
 
     // Decode and log the VerifiedAndExecuted event
-    if let Some(ev) = receipt.decoded_log::<IZKGuardSafeModule::VerifiedAndExecuted>() {
+    if let Some(event) = receipt.decoded_log::<IZKGuardSafeModule::VerifiedAndExecuted>() {
         info!("VerifiedAndExecuted event found:");
 
         let IZKGuardSafeModule::VerifiedAndExecuted {
@@ -111,7 +115,7 @@ pub async fn verify_onchain(
             operation,
             actionHash,
             journalDigest,
-        } = ev.data;
+        } = event.data;
 
         info!("  Safe: {}", safe);
         info!("  To: {}", to);

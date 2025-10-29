@@ -9,7 +9,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use zkguard_core::{MerklePath, PolicyLine, UserAction};
 use zkguard_guest::policy_engine::run_policy_checks;
 
-// Alloy: Solidity ABI definitions/encoding and Ethereum primitive types
 use alloy_primitives::{Address, U256, B256, Bytes};
 use alloy_sol_types::{sol, SolValue};   
 
@@ -39,17 +38,19 @@ fn keccak256(bytes: &[u8]) -> [u8; 32] {
     out
 }
 
+// TODO: Merge into zkguard_core to avoid duplication
 fn hash_user_action_keccak256(user_action: &UserAction) -> [u8; 32] {
     let from = Address::from(user_action.from);
     let to = Address::from(user_action.to);
-    let value = U256::from(user_action.value); // widen u128 -> U256
-    let nonce = U256::from(user_action.nonce); // widen u128 -> U256
+    let value = U256::from(user_action.value);
+    let nonce = U256::from(user_action.nonce);
     let data = Bytes::from(user_action.data.clone());
 
     let encoded = (from, to, value, nonce, data).abi_encode_params();
     keccak256(&encoded)
 }
 
+// TODO: Merge into zkguard_core to avoid duplication
 /// Canonicalises a map of lists: sorts addresses ascending (dedup) and uses
 /// a `BTreeMap` so keys are ordered.  Returns `(canonical, bytes)` where
 /// `bytes` is the bincode serialization of the canonical structure.
@@ -63,54 +64,23 @@ fn canonicalise_lists(
 /// Verifies a Merkle proof for a given leaf against a root.
 fn verify_merkle_proof(root: &[u8], leaf_bytes: &[u8], proof: &MerklePath) -> bool {
     env::log(&format!("verify_merkle_proof: Expected root: {:?}", root));
-    env::log(&format!(
-        "verify_merkle_proof: Leaf bytes length: {}",
-        leaf_bytes.len()
-    ));
-    env::log(&format!(
-        "verify_merkle_proof: Leaf index: {}",
-        proof.leaf_index
-    ));
-    env::log(&format!(
-        "verify_merkle_proof: Number of siblings: {}",
-        proof.siblings.len()
-    ));
 
     // CHANGE: Use the cleaner one-shot digest from the `sha2` crate.
     let mut computed_hash: [u8; 32] = Sha256::digest(leaf_bytes).into();
-
-    env::log(&format!(
-        "verify_merkle_proof: Initial computed hash: {:?}",
-        computed_hash
-    ));
-
     let mut current_index = proof.leaf_index;
 
-    for (i, sibling_hash) in proof.siblings.iter().enumerate() {
-        env::log(&format!(
-            "verify_merkle_proof: Step {}, current_index: {}, sibling: {:?}",
-            i, current_index, sibling_hash
-        ));
-
+    for (_, sibling_hash) in proof.siblings.iter().enumerate() {
         let mut combined = Vec::with_capacity(64);
         if current_index % 2 == 0 {
             combined.extend_from_slice(&computed_hash);
             combined.extend_from_slice(sibling_hash);
-            env::log("verify_merkle_proof: Left child + Right sibling");
         } else {
             combined.extend_from_slice(sibling_hash);
             combined.extend_from_slice(&computed_hash);
-            env::log("verify_merkle_proof: Left sibling + Right child");
         }
 
         // CHANGE: Use the one-shot digest again for subsequent hashes.
         computed_hash = Sha256::digest(&combined).into();
-
-        env::log(&format!(
-            "verify_merkle_proof: Computed hash after step {}: {:?}",
-            i, computed_hash
-        ));
-
         current_index /= 2; // Move up to the parent level
     }
 

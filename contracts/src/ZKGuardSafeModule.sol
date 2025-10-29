@@ -27,33 +27,27 @@ interface ISafe {
 interface IImageID {
     function ZKGUARD_POLICY_ID() external view returns (bytes32);
 }
+
 /// @title ZKGuardSafeModule
 /// @notice A Safe Module that verifies a RISC0 proof attesting that an action
 ///         complies with the ZKGuard policy engine, then executes that action via the Safe.
-/// @dev Journal layout:
-///      abi.encode(
-///         bytes32 claimedActionHash,
-///         bytes32 claimedPolicyHash,
-///         bytes32 claimedGroupsHash,
-///         bytes32 claimedAllowHash
-///      )
-///      userAction layout
-///      abi.encode(address to, uint256 value, bytes data, uint256 nonce)
-
 contract ZKGuardSafeModule {
     /// Immutable verifier + imageId (pinned at construction time).
     /// @notice Image ID of the only zkVM binary to accept verification from.
     bytes32 public immutable IMAGE_ID;
+
+    /// @notice RISC0 verifier contract.
     IRiscZeroVerifier public immutable VERIFIER;
 
-    /// The Safe this module is installed on.
+    /// @notice The Safe this module is installed on.
     address public safe;
 
-    /// Policy root commitments pinned in the module.
+    /// @notice Policy root commitments pinned in the module.
     bytes32 public policyHash;
     bytes32 public groupsHash;
     bytes32 public allowHash;
 
+    /// @notice Events
     event VerifiedAndExecuted(
         address indexed safe,
         address indexed to,
@@ -67,10 +61,11 @@ contract ZKGuardSafeModule {
     /// @notice Constructor
     /// @param _verifier The RISC0 verifier contract address.
     /// @param _imageId The RISC0 image ID for the ZKGuard policy engine.
-    /// @param _groupsHash The initial groups root hash.
-    /// @param _allowHash The initial allowlists root hash.
+    /// @param _groupsHash The initial groups hash.
+    /// @param _allowHash The initial allowlist hash.
     constructor(address _verifier, address _imageId, bytes32 _groupsHash, bytes32 _allowHash) {
         require(_verifier != address(0), "zero-address-verifier");
+        require(_imageId != address(0), "zero-address-imageid");
         VERIFIER = IRiscZeroVerifier(_verifier);
         IMAGE_ID = IImageID(_imageId).ZKGUARD_POLICY_ID();
 
@@ -85,14 +80,14 @@ contract ZKGuardSafeModule {
     ///   In case it is NOT called during setup, ANYONE could call this function later to set the Safe address,
     ///   which could be a security risk. If the SAFE address is already set, or if the caller is not the Safe itself, the call reverts.
     function setSafe(address _safe, bytes32 _policyHash) external {
-        // (1) Ensure safe is not already set, module is enabled on the Safe, and caller is the Safe itself.
-        require(safe == address(0), "already-set");
+        // (1) Ensure safe address is not already set, module is enabled on the Safe, and caller is the Safe itself.
+        require(safe == address(0), "safe-already-set");
         require(ISafe(_safe).isModuleEnabled(address(this)), "module-not-enabled");
-        require(msg.sender == _safe, "only-safe");
+        require(msg.sender == _safe, "only-safe-caller");
 
         // (2) Set the safe and policy hash.
-        policyHash = _policyHash;
         safe = _safe;
+        policyHash = _policyHash;
     }
 
     /// @notice Updates the policy, groups, and allowlist root hashes.
@@ -103,7 +98,6 @@ contract ZKGuardSafeModule {
     function updateHashes(bytes32 newPolicyHash, bytes32 newGroupsHash, bytes32 newAllowHash) external {
         // (1) Verify caller is the Safe and that this module is enabled on it.
         require(msg.sender == safe, "only-safe-caller");
-
         require(ISafe(safe).isModuleEnabled(address(this)), "module-not-enabled");
 
         // (2) Update the hashes.
@@ -118,8 +112,6 @@ contract ZKGuardSafeModule {
     /// @notice Verifies the RISC0 proof and enforces the journal claims against the module state.
     /// @param seal The RISC0 proof seal.
     /// @param journal The RISC0 proof journal.
-    /// @return claimedActionHash The action hash claimed in the journal.
-    /// @return jdig The SHA256 digest of the journal.
     function _verify(bytes calldata seal, bytes calldata journal) internal view returns (bytes32, bytes32) {
         // (1) Verify RISC Zero proof
         bytes32 jdig = sha256(journal);
@@ -156,7 +148,7 @@ contract ZKGuardSafeModule {
         (address from, address to, uint256 value, uint256 nonce, bytes memory data) =
             abi.decode(userAction, (address, address, uint256, uint256, bytes));
 
-        // (3) Bind to exact user action.
+        // (3) Verify that the claimed action hash matches the user action.
         bytes32 actionHash = keccak256(userAction);
         require(claimedActionHash == actionHash, "action-hash-mismatch");
 

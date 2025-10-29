@@ -6,7 +6,6 @@ use k256::elliptic_curve::rand_core::OsRng;
 use risc0_zkvm::{default_prover, ExecutorEnv};
 use rs_merkle::MerkleTree;
 use std::collections::HashMap;
-// CHANGE: Import the `Hasher` trait from tiny_keccak
 use tiny_keccak::{Hasher, Keccak};
 use zkguard_core::{
     hash_policy_line_for_merkle_tree, AssetPattern, DestinationPattern, MerklePath, PolicyLine,
@@ -22,7 +21,7 @@ fn encode<T: serde::Serialize>(data: &T) -> Vec<u8> {
         .unwrap()
 }
 
-// CHANGE: Updated to use the correct tiny-keccak API
+// TODO: Merge into zkguard_core to avoid duplication
 fn hash_user_action(ua: &UserAction) -> [u8; 32] {
     // 1. Create a Keccak-256 hasher instance
     let mut h = Keccak::v256();
@@ -130,7 +129,6 @@ fn main() -> Result<()> {
         amount_max: None,                      // no limit
         function_selector: None,
     };
-
     let rule_2 = PolicyLine {
         id: 3,
         tx_type: TxType::ContractCall,

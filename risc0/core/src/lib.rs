@@ -9,8 +9,9 @@ use rs_merkle::Hasher as MerkleHasher;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use tiny_keccak::Keccak;
+
 ////////////////////////////////////////////////////////////////
-//  Public constants (grouped so callers can use `constants::*`)
+//  Public constants
 ////////////////////////////////////////////////////////////////
 pub mod constants {
     //! Values that both guest and host need.
@@ -25,9 +26,8 @@ pub mod constants {
 //  Helper types & functions
 ////////////////////////////////////////////////////////////////
 
-/// Keccak-256 convenience wrapper (available to both sides)
+/// Keccak-256 convenience wrapper
 pub fn keccak256(bytes: &[u8]) -> [u8; 32] {
-    // Import the trait needed for the .update() and .finalize() methods
     use tiny_keccak::Hasher;
 
     let mut k = Keccak::v256();
@@ -37,11 +37,12 @@ pub fn keccak256(bytes: &[u8]) -> [u8; 32] {
     out
 }
 
-#[derive(Clone)] // rs-merkle requires Hasher to be Clone
+#[derive(Clone)]
 pub struct Sha256MerkleHasher;
 
 impl MerkleHasher for Sha256MerkleHasher {
-    type Hash = [u8; 32]; // Output type of the hash function (fixed-size array)
+    // Fixed size 32-byte hash
+    type Hash = [u8; 32];
 
     fn hash(data: &[u8]) -> Self::Hash {
         // Convert the resulting byte slice `&[u8]` into a fixed-size array `[u8; 32]`
@@ -57,26 +58,16 @@ pub fn canonicalise_lists(
 ) -> (BTreeMap<String, Vec<[u8; 20]>>, Vec<u8>) {
     use bincode::Options;
     let mut canon: BTreeMap<String, Vec<[u8; 20]>> = BTreeMap::new();
-    for (k, mut v) in raw.into_iter() {
-        v.sort();
-        v.dedup();
-        canon.insert(k, v);
+    for (key, mut value) in raw.into_iter() {
+        value.sort();
+        value.dedup();
+        canon.insert(key, value);
     }
     let bytes = bincode::DefaultOptions::new()
         .with_fixint_encoding()
         .serialize(&canon)
         .expect("canonical serialise");
     (canon, bytes)
-}
-
-/// Compact action enum produced by [`parse_action`]
-#[derive(Clone, Copy, Debug)]
-pub enum Action {
-    Transfer {
-        erc20_address: [u8; 20],
-        to: [u8; 20],
-        amount: u128,
-    },
 }
 
 /// Very small, fixed-layout ABI decoder for the two hard-coded
@@ -103,8 +94,7 @@ pub fn parse_action<'a>(target: &[u8], data: &'a [u8]) -> Option<Action> {
     }
 }
 
-// It bincode-serializes the PolicyLine and then hashes the resulting bytes.
-// This ensures consistency between host (building tree) and guest (verifying leaf hash).
+// Bincode-serialization of the PolicyLine and SHA-256 hash of the result.
 pub fn hash_policy_line_for_merkle_tree(pl: &PolicyLine) -> [u8; 32] {
     // Serialize the PolicyLine into bytes.
     let policy_line_bytes = bincode::DefaultOptions::new()
@@ -112,13 +102,22 @@ pub fn hash_policy_line_for_merkle_tree(pl: &PolicyLine) -> [u8; 32] {
         .serialize(pl)
         .expect("Failed to bincode serialize PolicyLine for hashing");
 
-    // Hash the resulting bytes using the standard `sha2` crate.
+    // Hash the resulting bytes
     sha2::Sha256::digest(&policy_line_bytes).into()
 }
 
 /*───────────────────────────────────────────────────────────────────────────*
  * Data Structures                                                          *
  *───────────────────────────────────────────────────────────────────────────*/
+/// Compact action enum produced by [`parse_action`]
+#[derive(Clone, Copy, Debug)]
+pub enum Action {
+    Transfer {
+        erc20_address: [u8; 20],
+        to: [u8; 20],
+        amount: u128,
+    },
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TxType {
@@ -154,7 +153,7 @@ pub enum SignerPattern {
 pub enum AssetPattern {
     /// Wildcard – matches any asset.
     Any,
-    /// Exact ERC-20 contract address or the pseudo-identifier for ETH.
+    /// Exact contract address of the asset.
     Exact([u8; 20]),
 }
 
@@ -167,13 +166,10 @@ pub enum ActionType {
 /// One line in the policy (ordered by the `id` field).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PolicyLine {
-    pub id: u32, // evaluated in ascending order
+    pub id: u32,
     pub tx_type: TxType,
     pub destination: DestinationPattern,
     pub signer: SignerPattern,
-    // ───────────────────────────────────────────────────────────────────────
-    // **Minimum** is intentionally omitted for the moment – future work.
-    // ───────────────────────────────────────────────────────────────────────
     pub asset: AssetPattern,
     pub amount_max: Option<u128>,
     pub function_selector: Option<[u8; 4]>,
@@ -190,8 +186,8 @@ pub struct UserAction {
     pub to: [u8; 20],             // target contract or direct recipient
     pub value: u128,              // native token amount (wei)
     pub nonce: u64,               // Safe's current nonce for replay protection
-    pub data: Vec<u8>,            // calldata (empty for plain ETH transfers)
-    pub signatures: Vec<Vec<u8>>, // one or more Ethereum-style signatures (65 bytes each)
+    pub data: Vec<u8>,            // calldata
+    pub signatures: Vec<Vec<u8>>, // one or more ECDSA signatures + recovery id
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
